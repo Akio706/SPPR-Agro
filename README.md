@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # AgroFields NiceGUI
 
 Веб-приложение для агрономов на NiceGUI и SQLAlchemy для управления полями, полигонами и почвенными данными.
@@ -41,3 +42,6 @@ MIT
 ---
 
 **Автор:** [Akio706](https://github.com/Akio706) 
+=======
+# SPPR-Agro
+>>>>>>> bef2e5e7e46e55624e8c83deba3febbfbca27e38
