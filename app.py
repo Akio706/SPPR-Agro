@@ -13,12 +13,12 @@ import requests
 import folium
 
 # Создаем базу данных SQLAlchemy
-Base = declarative_base()
-engine = create_engine('sqlite:///map_data.db')
+DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///map_data.db')
+engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 
 # Модели ORM
-
+Base = declarative_base()
 
 class User(Base):
     __tablename__ = 'users'
@@ -960,9 +960,6 @@ def fields_page():
         ui.label('Управление полями').classes('text-h4 q-mb-md')
         with ui.row().classes('q-mb-md'):
             ui.button('Создать новое поле', on_click=lambda: ui.open('/map?action=create')).props('color=positive')
-            ui.button('Удалить выбранные', on_click=delete_selected_fields).props('color=negative')
-            ui.button('Показать на карте', on_click=lambda: ui.open('/map?action=select&fields=' + ','.join(str(row['id']) for row in selected))).props('color=primary')
-            ui.button('Выгрузить параметры', on_click=export_all_fields_to_csv_dialog).props('color=primary')
         search_text = ui.input(label='Поиск по названию').classes('q-mr-md')
         search_text.on('change', filter_fields)
         fields_table = ui.table(
