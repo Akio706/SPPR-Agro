@@ -1,0 +1,46 @@
+services:
+  python-app:
+    build:
+      context: .
+    container_name: python-app
+    restart: unless-stopped
+    init: true
+    ports:
+      - "8080:8080"  # Expose the app on port 8080 as per Dockerfile and README
+    # env_file: ./.env  # Uncomment if .env file exists
+    # If you want to use PostgreSQL, set DATABASE_URL as described in the README
+    # environment:
+    #   - DATABASE_URL=postgresql+psycopg2://user:password@host:5432/dbname
+    depends_on:
+      - postgres  # Only needed if you use PostgreSQL as your database
+    networks:
+      - app-net
+
+  postgres:
+    image: postgres:latest
+    container_name: postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: user
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: dbname
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-net
+    # Uncomment the following line if you want to expose PostgreSQL outside Docker
+    # ports:
+    #   - "5432:5432"
+
+networks:
+  app-net:
+    driver: bridge
+
+volumes:
+  pgdata:
+    # Persistent storage for PostgreSQL

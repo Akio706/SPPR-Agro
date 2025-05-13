@@ -2,7 +2,7 @@
 
 FROM python:3.10-slim AS base
 
-# Install system dependencies required for Python packages (e.g., psycopg2)
+# Install system dependencies required for Python packages (e.g., pandas, numpy, psycopg2)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
@@ -13,7 +13,7 @@ RUN useradd --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 
-# Builder stage: install dependencies in a virtual environment
+# Builder stage: install dependencies in a venv
 FROM base AS builder
 
 WORKDIR /app
@@ -27,7 +27,7 @@ RUN python -m venv .venv \
     && --mount=type=cache,target=/root/.cache/pip \
        .venv/bin/pip install -r requirements.txt
 
-# Copy the rest of the application code
+# Copy the rest of the application code (everything in niceGUI/)
 COPY --link . .
 
 # Final image

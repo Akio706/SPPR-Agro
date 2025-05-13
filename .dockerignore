@@ -1,9 +1,89 @@
-__pycache__
+# 1. Version control
+.git/
+.gitignore
+.svn/
+.hg/
+
+# 2. Python artifacts
+__pycache__/
 *.pyc
 *.pyo
-*.db
-.env
-.git
-.gitignore
-README.md
-polygons.geojson 
+*.pyd
+.pytest_cache/
+.coverage
+
+# 3. IDE/editor files
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# 4. Build and distribution outputs
+dist/
+build/
+out/
+
+# 5. Test and debug files
+test/
+tests/
+*_test.go
+debug/
+*.log
+
+# 6. Node.js (not detected, but for completeness)
+node_modules/
+npm-debug.log
+yarn-debug.log
+
+# 7. Go (not detected, but for completeness)
+/vendor/
+*.test
+.go-cache/
+
+# 8. Java (not detected, but for completeness)
+target/
+*.class
+.gradle/
+
+# 9. Environment and secrets
+.env*
+*.env
+*.pem
+*.key
+*.crt
+config.local.*
+*.local.yml
+
+# 10. Documentation and markdown
+docs/
+*.md
+README*
+
+# 11. Docker and Compose files
+Dockerfile*
+docker-compose*
+compose.yaml
+
+# 12. Temporary and backup files
+tmp/
+temp/
+*.tmp
+*.bak
+
+# 13. Local development
+.local/
+local/
+
+# 14. Project-specific data and cache
+# (Keep data/ and geojson/csv files if needed by the app; do not ignore unless sure)
+# niceGUI/data copy/  # Uncomment if this is not needed in the build
+
+# 15. Miscellaneous
+*.db  # Ignore SQLite DBs unless needed for the build context
+
+# 16. Exclude empty directories (Docker ignores empty dirs by default)
+
+# 17. Exclude files with no extension (if not needed)
+# *.
+
+# End of .dockerignore

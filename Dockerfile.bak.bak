@@ -2,18 +2,18 @@
 
 FROM python:3.10-slim AS base
 
-# Install system dependencies required for Python packages (e.g., psycopg2)
+# System dependencies for Python packages (e.g., psycopg2)
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
-# Create a non-root user for running the app
+# Create a non-root user
 RUN useradd --create-home --shell /bin/bash appuser
 
 WORKDIR /app
 
-# Builder stage: install dependencies in a virtual environment
+# Install dependencies in a virtual environment in a builder stage
 FROM base AS builder
 
 WORKDIR /app
