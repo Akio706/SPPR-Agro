@@ -1,22 +1,22 @@
-from nicegui import ui, events
+from nicegui import ui
 from db import Session, Field
 import json
 from datetime import datetime
 
-# Подключаем только Leaflet Draw CSS и JS (без leaflet.js/leaflet.css)
+# Подключаем только Leaflet Draw (CSS и JS)
 ui.add_head_html("""
-<link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css\"/>
-<script src=\"https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js\"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 """)
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
-    map_view = ui.leaflet(center=(51.505, -0.09), zoom=9).style('height: 400px; width: 100%;')
+    map_view = ui.leaflet(center=(55.75, 37.62), zoom=6).style('height: 500px; width: 100%;')
 
+    # --- СОЗДАНИЕ ПОЛИГОНА ---
     if action == 'create':
-        # Инициализация режима рисования полигона сразу после загрузки карты
         ui.run_javascript(f"""
         document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
             var map = window.mapInstances['{map_view.id}'];
@@ -65,13 +65,105 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 }}
             }};
             map.on(L.Draw.Event.CREATED, window._drawCreatedHandler);
-            // Автоматически активируем инструмент рисования полигона
             setTimeout(function() {{
                 new L.Draw.Polygon(map, window._drawControl.options.draw.polygon).enable();
             }}, 300);
         }}, {{ once: true }});
         """)
 
+    # --- РЕДАКТИРОВАНИЕ ПОЛИГОНА ---
+    elif action == 'edit' and fields:
+        try:
+            field_id = int(fields)
+        except (TypeError, ValueError):
+            ui.notify('Некорректный ID поля', color='negative')
+            return
+        session = Session()
+        field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
+        session.close()
+        if not field:
+            ui.notify('Поле не найдено', color='negative')
+            return
+        coords = json.loads(field.coordinates)
+        latlngs = coords[0]
+        lat = sum(p['lat'] for p in latlngs) / len(latlngs)
+        lng = sum(p['lng'] for p in latlngs) / len(latlngs)
+        map_view.set_center((lat, lng))
+        js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
+        ui.run_javascript(f"""
+        document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
+            var map = window.mapInstances['{map_view.id}'];
+            if (!map) return;
+            if (window.drawnItems) {{
+                window.drawnItems.clearLayers();
+            }} else {{
+                window.drawnItems = new L.FeatureGroup();
+                map.addLayer(window.drawnItems);
+            }}
+            let poly = L.polygon({js_coords}, {{color: 'orange', weight: 3}}).addTo(window.drawnItems);
+            map.fitBounds(poly.getBounds());
+            window._editPoly = poly;
+        }}, {{ once: true }});
+        """)
+        def save_edited():
+            ui.run_javascript(f"""
+                (function() {{
+                    const poly = window._editPoly;
+                    if (!poly) {{
+                        window.nicegui.notify('Полигон не найден для сохранения', 'negative');
+                        return;
+                    }}
+                    const latlngs = poly.getLatLngs()[0].map(pt => {{ return {{lat: pt.lat, lng: pt.lng}} }});
+                    window.nicegui.send_event('save_edited_poly', {{latlngs: latlngs}});
+                }})();
+            """)
+        def on_save_edited_poly(e):
+            new_coords = [e.args['latlngs']]
+            session = Session()
+            field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
+            if field:
+                field.coordinates = json.dumps(new_coords)
+                field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                session.commit()
+                ui.notify('Поле успешно обновлено', color='positive')
+                ui.open('/fields')
+            else:
+                ui.notify('Ошибка при обновлении поля', color='negative')
+            session.close()
+        ui.on('save_edited_poly', on_save_edited_poly)
+        ui.button('Сохранить изменения', on_click=save_edited).classes('mt-4')
+
+    # --- ПРОСМОТР ВСЕХ ПОЛЕЙ ---
+    elif action == 'select' and fields:
+        try:
+            field_id = int(fields)
+        except (TypeError, ValueError):
+            ui.notify('Некорректный ID поля', color='negative')
+            return
+        session = Session()
+        field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
+        session.close()
+        if not field:
+            ui.notify('Поле не найдено', color='negative')
+            return
+        coords = json.loads(field.coordinates)
+        latlngs = coords[0]
+        lat = sum(p['lat'] for p in latlngs) / len(latlngs)
+        lng = sum(p['lng'] for p in latlngs) / len(latlngs)
+        map_view.set_center((lat, lng))
+        js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
+        ui.run_javascript(f'''
+            window.mapInstances = window.mapInstances || {{}};
+            document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
+                const map = window.mapInstances['{map_view.id}'];
+                if (map) {{
+                    let poly = L.polygon({js_coords}, {{color: 'green', weight: 3}}).addTo(map);
+                    map.fitBounds(poly.getBounds());
+                }}
+            }}, {{ once: true }});
+        ''')
+
+    # --- ДИАЛОГ СОХРАНЕНИЯ ПОЛЯ ---
     def show_save_dialog(coords):
         dialog = ui.dialog()
         with dialog, ui.card():
@@ -117,87 +209,4 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
 
     ui.on('polygon_drawn', on_polygon_drawn)
 
-    # Показываем все существующие поля пользователя как полигоны
-    session = Session()
-    user_fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
-    session.close()
-    for field in user_fields:
-        coords = json.loads(field.coordinates)
-        latlngs = coords[0]
-        js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
-        ui.run_javascript(f'''
-            window.mapInstances = window.mapInstances || {{}};
-            document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
-                const map = window.mapInstances['{map_view.id}'];
-                if (map) {{
-                    L.polygon({js_coords}, {{color: 'blue', weight: 2}}).addTo(map);
-                }}
-            }}, {{ once: true }});
-        ''')
-
-    if action == 'edit' and fields:
-        try:
-            field_id = int(fields)
-        except (TypeError, ValueError):
-            ui.notify('Некорректный ID поля', color='negative')
-            return
-        session = Session()
-        field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
-        session.close()
-        if not field:
-            ui.notify('Поле не найдено', color='negative')
-            return
-        coords = json.loads(field.coordinates)
-        latlngs = coords[0]
-        # Центр полигона
-        lat = sum(p['lat'] for p in latlngs) / len(latlngs)
-        lng = sum(p['lng'] for p in latlngs) / len(latlngs)
-        map_view.set_center((lat, lng))
-        # Добавляем полигон на карту и включаем режим редактирования
-        poly_id = f'edit_poly_{field_id}'
-        js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
-        ui.run_javascript(f'''
-            window.mapInstances = window.mapInstances || {{}};
-            document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
-                const map = window.mapInstances['{map_view.id}'];
-                if (map) {{
-                    let poly = L.polygon({js_coords}, {{color: 'orange', weight: 3, id: '{poly_id}'}}).addTo(map);
-                    map.fitBounds(poly.getBounds());
-                    // Включаем режим редактирования
-                    if (map.editTools) {{
-                        poly.enableEdit();
-                    }}
-                    // Сохраняем ссылку на полигон
-                    window._editPoly = poly;
-                }}
-            }}, {{ once: true }});
-        ''')
-        def save_edited():
-            # Получаем новые координаты из JS
-            ui.run_javascript(f'''
-                (function() {{
-                    const poly = window._editPoly;
-                    if (!poly) {{
-                        window.nicegui.notify('Полигон не найден для сохранения', 'negative');
-                        return;
-                    }}
-                    const latlngs = poly.getLatLngs()[0].map(pt => {{ return {{lat: pt.lat, lng: pt.lng}} }});
-                    window.nicegui.send_event('save_edited_poly', {{latlngs: latlngs}});
-                }})();
-            ''')
-        def on_save_edited_poly(e):
-            new_coords = [e.args['latlngs']]
-            session = Session()
-            field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
-            if field:
-                field.coordinates = json.dumps(new_coords)
-                field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                session.commit()
-                ui.notify('Поле успешно обновлено', color='positive')
-                ui.open('/fields')
-            else:
-                ui.notify('Ошибка при обновлении поля', color='negative')
-            session.close()
-        ui.on('save_edited_poly', on_save_edited_poly)
-        ui.button('Сохранить изменения', on_click=save_edited).classes('mt-4')
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4') 
