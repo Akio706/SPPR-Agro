@@ -10,65 +10,60 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     # Карта без draw_control, но с поддержкой рисования через кастомный JS
     map_view = ui.leaflet(center=(51.505, -0.09), zoom=9).style('height: 400px; width: 100%;')
 
-    # Кнопка для запуска режима рисования
-    def start_draw():
-        ui.run_javascript(f"""
-            (function() {{
-                var map = window.mapInstances['{map_view.id}'];
-                if (!map) return;
-                if (window._drawControl) {{
-                    map.removeControl(window._drawControl);
-                    window._drawControl = null;
+    # --- Сразу после создания map_view ---
+    ui.run_javascript(f"""
+        (function() {{
+            var map = window.mapInstances['{map_view.id}'];
+            if (!map) return;
+            if (window._drawControl) {{
+                map.removeControl(window._drawControl);
+                window._drawControl = null;
+            }}
+            if (window.drawnItems) {{
+                window.drawnItems.clearLayers();
+            }} else {{
+                window.drawnItems = new L.FeatureGroup();
+                map.addLayer(window.drawnItems);
+            }}
+            window._drawControl = new L.Control.Draw({{
+                edit: {{
+                    featureGroup: window.drawnItems
+                }},
+                draw: {{
+                    polygon: true,
+                    marker: true,
+                    circle: true,
+                    rectangle: true,
+                    polyline: true,
+                    circlemarker: true
                 }}
-                if (window.drawnItems) {{
-                    window.drawnItems.clearLayers();
+            }});
+            map.addControl(window._drawControl);
+            if (window._drawCreatedHandler) {{
+                map.off(L.Draw.Event.CREATED, window._drawCreatedHandler);
+            }}
+            window._drawCreatedHandler = function (e) {{
+                var layer = e.layer;
+                window.drawnItems.addLayer(layer);
+                var coords = null;
+                if (layer.getLatLngs) {{
+                    var latlngs = layer.getLatLngs();
+                    if (Array.isArray(latlngs) && latlngs.length > 0) {{
+                        coords = [latlngs[0].map(function(pt) {{ return {{lat: pt.lat, lng: pt.lng}}; }})];
+                    }}
+                }} else if (layer.getLatLng) {{
+                    var latlng = layer.getLatLng();
+                    coords = [[{{lat: latlng.lat, lng: latlng.lng}}]];
+                }}
+                if (coords) {{
+                    window.nicegui.send_event('polygon_drawn', {{coords: coords}});
                 }} else {{
-                    window.drawnItems = new L.FeatureGroup();
-                    map.addLayer(window.drawnItems);
+                    window.nicegui.notify('Не удалось получить координаты объекта', 'negative');
                 }}
-                window._drawControl = new L.Control.Draw({{
-                    edit: {{
-                        featureGroup: window.drawnItems
-                    }},
-                    draw: {{
-                        polygon: true,
-                        marker: true,
-                        circle: true,
-                        rectangle: true,
-                        polyline: true,
-                        circlemarker: true
-                    }}
-                }});
-                map.addControl(window._drawControl);
-                if (window._drawCreatedHandler) {{
-                    map.off(L.Draw.Event.CREATED, window._drawCreatedHandler);
-                }}
-                window._drawCreatedHandler = function (e) {{
-                    var layer = e.layer;
-                    window.drawnItems.addLayer(layer);
-                    var coords = null;
-                    if (layer.getLatLngs) {{
-                        var latlngs = layer.getLatLngs();
-                        // Для полигонов и линий
-                        if (Array.isArray(latlngs) && latlngs.length > 0) {{
-                            coords = [latlngs[0].map(function(pt) {{ return {{lat: pt.lat, lng: pt.lng}}; }})];
-                        }}
-                    }} else if (layer.getLatLng) {{
-                        // Для маркеров и окружностей
-                        var latlng = layer.getLatLng();
-                        coords = [[{{lat: latlng.lat, lng: latlng.lng}}]];
-                    }}
-                    if (coords) {{
-                        window.nicegui.send_event('polygon_drawn', {{coords: coords}});
-                    }} else {{
-                        window.nicegui.notify('Не удалось получить координаты объекта', 'negative');
-                    }}
-                }};
-                map.on(L.Draw.Event.CREATED, window._drawCreatedHandler);
-            }})();
-        """)
-
-    ui.button('Режим рисования', on_click=start_draw).props('color=primary').classes('mb-4')
+            }};
+            map.on(L.Draw.Event.CREATED, window._drawCreatedHandler);
+        }})();
+    """)
 
     # Показываем все существующие поля пользователя как полигоны
     session = Session()
