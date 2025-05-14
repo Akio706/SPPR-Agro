@@ -77,17 +77,22 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     return
 
                 session = Session()
-                try:
-                    field = Field(
-                        user_id=ui.page.user_id,
-                        name=name_input.value,
-                        coordinates=json.dumps(coords),
-                        group=group_input.value,
-                        notes=notes_input.value,
-                        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    )
-                    session.add(field)
-                    session.commit()
-                    ui.notify('Поле успешно создано', color='positive')
-                    dialog.close()
-                    ui.run_javascript("window.location.href = '/fields';")
+               try:
+    field = Field(
+        user_id=ui.page.user_id,
+        name=name_input.value,
+        coordinates=json.dumps(coords),
+        group=group_input.value,
+        notes=notes_input.value,
+        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    )
+    session.add(field)
+    session.commit()
+    ui.notify('Поле успешно создано', color='positive')
+    dialog.close()
+    ui.run_javascript("window.location.href = '/fields';")
+except Exception as e:
+    ui.notify(f'Произошла ошибка: {str(e)}', type='negative')
+    session.rollback()
+finally:
+    session.close()
