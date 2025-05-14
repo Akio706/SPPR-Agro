@@ -65,7 +65,7 @@ draw_control = {
 }
 
 # Create the map
-m = ui.leaflet(center=(51.5, 0), draw_control=draw_control, hide_drawn_items=True)
+m = ui.leaflet(center=(51.5, 0), draw_control=draw_control)
 m.on('draw:created', handle_draw)
 
 ui.run()
