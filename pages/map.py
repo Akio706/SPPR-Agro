@@ -1,4 +1,4 @@
-from nicegui import ui
+from nicegui import ui, events
 from db import Session, Field
 import json
 from datetime import datetime
@@ -9,60 +9,41 @@ ui.add_head_html("""
 <script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
 """)
 
+
+def handle_draw(e: events.GenericEventArguments):
+    """
+    Handles the drawing of polygons on the map.
+    """
+    options = {'color': 'red', 'weight': 1}  # Styling options for the drawn polygon
+    m.generic_layer(name='polygon', args=[e.args['layer']['_latlngs'], options])
+
+
 def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         ui.run_javascript("window.location.href = '/';")
         return
 
-    # Create the map
-    map_view = ui.leaflet(center=(55.75, 37.62), zoom=6).style('height: 500px; width: 100%;')
+    # Draw control configuration
+    draw_control = {
+        'draw': {
+            'polygon': True,
+            'marker': False,
+            'circle': False,
+            'rectangle': False,
+            'polyline': False,
+            'circlemarker': False,
+        },
+        'edit': {
+            'edit': False,
+            'remove': False,
+        },
+    }
 
-    # Enable polygon creation
-    if action == 'create':
-        ui.run_javascript(f"""
-        document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
-            const map = window.mapInstances['{map_view.id}'];
-            if (!map) {{
-                console.error('Map instance not found!');
-                return;
-            }}
+    # Create the map with the custom draw control
+    m = ui.leaflet(center=(51.5, 0), draw_control=draw_control, hide_drawn_items=True)
+    m.on('draw:created', handle_draw)  # Bind the drawing event to the handler
 
-            // Initialize the drawn items layer
-            if (!window.drawnItems) {{
-                window.drawnItems = new L.FeatureGroup();
-                map.addLayer(window.drawnItems);
-            }}
-
-            // Add drawing controls
-            const drawControl = new L.Control.Draw({{
-                edit: {{ featureGroup: window.drawnItems }},
-                draw: {{
-                    polygon: true,
-                    marker: false,
-                    circle: false,
-                    rectangle: false,
-                    polyline: false,
-                    circlemarker: false
-                }}
-            }});
-            map.addControl(drawControl);
-
-            // Handle the creation of a new polygon
-            map.on(L.Draw.Event.CREATED, function (e) {{
-                const layer = e.layer;
-                window.drawnItems.addLayer(layer);
-
-                // Extract coordinates
-                const latlngs = layer.getLatLngs()[0].map(pt => {{ return {{ lat: pt.lat, lng: pt.lng }}; }});
-                console.log('Polygon drawn with coordinates:', latlngs);
-
-                // Send the coordinates to NiceGUI
-                window.nicegui.send_event('polygon_drawn', {{ coords: [latlngs] }});
-            }});
-        }});
-        """)
-
-    # Dialog box to save the drawn polygon
+    # Save Dialog
     def show_save_dialog(coords):
         dialog = ui.dialog()
         with dialog, ui.card():
@@ -115,3 +96,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
 
     # Button to go back to the fields page
     ui.button('Назад к полям', on_click=lambda: ui.run_javascript("window.location.href = '/fields';")).classes('mt-4')
+
+
+ui.run()
