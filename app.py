@@ -857,11 +857,9 @@ def fields_page():
     selected = []
 
     def on_select(e):
-        print('e.selected:', getattr(e, 'selected', None))  # Для отладки
         selected.clear()
         if hasattr(e, 'selected') and e.selected:
             selected.extend(e.selected)
-        print('selected:', selected)  # Для отладки
 
     def delete_selected_fields():
         print('selected:', selected)  # Для отладки
@@ -943,12 +941,6 @@ def fields_page():
 
     def load_fields():
         fields = get_user_fields(ui.page.user_id)
-        # Добавляем поле actions с кнопкой для каждой строки
-        for f in fields:
-            f['actions'] = ui.button(
-                'Редактировать',
-                on_click=lambda field_id=f['id']: ui.open(f'/map?action=edit&fields={field_id}')
-            )
         fields_table.rows = fields
         return fields
 
@@ -957,6 +949,13 @@ def fields_page():
         if search_text.value:
             fields = [f for f in fields if search_text.value.lower() in f['name'].lower()]
         fields_table.rows = fields
+
+    def edit_selected():
+        if not selected:
+            ui.notify('Выберите поле для редактирования', type='warning')
+            return
+        field_id = selected[0]['id']
+        ui.open(f'/map?action=edit&fields={field_id}')
 
     # --- UI ---
     with ui.card().classes('w-full'):
@@ -970,13 +969,13 @@ def fields_page():
                 {'name': 'id', 'label': 'ID', 'field': 'id', 'align': 'left'},
                 {'name': 'name', 'label': 'Название', 'field': 'name', 'align': 'left'},
                 {'name': 'created_at', 'label': 'Создано', 'field': 'created_at', 'align': 'left'},
-                {'name': 'actions', 'label': 'Действия', 'field': 'actions', 'align': 'center'},
             ],
             rows=[],
             row_key='id',
-            selection='multiple',
+            selection='single',
             on_select=on_select
         ).classes('w-full')
+        ui.button('Редактировать выбранное поле', on_click=edit_selected).props('color=primary')
         # --- Обходной способ удаления по id ---
         with ui.row().classes('q-mt-md'):
             delete_id_input = ui.input(label='ID для удаления').props('type=number').classes('q-mr-md')
