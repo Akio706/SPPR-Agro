@@ -2,6 +2,7 @@ from nicegui import ui
 from db import Session, Field, SoilAnalysis, ClimateData
 import json
 from datetime import datetime
+import csv
 
 def fields_page():
     if not getattr(ui.page, 'user_id', None):
@@ -51,27 +52,61 @@ def fields_page():
         with table.add_slot('body-cell-edit', row['id']):
             ui.button('Редактировать', on_click=lambda r=row: edit_field(r['id'])).props('color=primary')
 
-    # Кнопка "Удалить поле по ID"
+    # --- Управление по ID ---
     with ui.row().classes('mt-2'):
-        delete_id_input = ui.input(label='ID для удаления').props('type=number').classes('q-mr-md')
-        def delete_by_id():
+        id_input = ui.input(label='ID поля').props('type=number').classes('q-mr-md')
+        def edit_by_id():
             try:
-                field_id = int(delete_id_input.value)
+                field_id = int(id_input.value)
+            except (TypeError, ValueError):
+                ui.notify('Введите корректный ID', color='warning')
+                return
+            ui.open(f'/map?action=edit&fields={field_id}')
+        ui.button('Редактировать по ID', on_click=edit_by_id).props('color=primary')
+        def export_params_by_id():
+            try:
+                field_id = int(id_input.value)
             except (TypeError, ValueError):
                 ui.notify('Введите корректный ID', color='warning')
                 return
             session = Session()
             field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
+            session.close()
             if not field:
                 ui.notify('Поле не найдено', color='negative')
-                session.close()
                 return
-            session.delete(field)
-            session.commit()
-            session.close()
-            ui.notify(f'Поле с id={field_id} удалено', color='positive')
-            ui.open('/fields')
-        ui.button('Удалить по id', on_click=delete_by_id).props('color=negative')
+            filename = f'field_{field_id}_params.csv'
+            coords = json.loads(field.coordinates)
+            latlngs = coords[0]
+            lat = sum(p['lat'] for p in latlngs) / len(latlngs)
+            lng = sum(p['lng'] for p in latlngs) / len(latlngs)
+            # Здесь можно добавить получение параметров почвы через ArcGIS, если нужно
+            fieldnames = [
+                'id', 'name', 'created_at', 'coordinates', 'group', 'notes', 'area', 'soil_type', 'soil_ph', 'humus_content', 'soil_texture', 'elevation', 'slope', 'aspect'
+            ]
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                row = {
+                    'id': field.id,
+                    'name': field.name,
+                    'created_at': field.created_at,
+                    'coordinates': field.coordinates,
+                    'group': field.group,
+                    'notes': field.notes,
+                    'area': field.area,
+                    'soil_type': field.soil_type,
+                    'soil_ph': field.soil_ph,
+                    'humus_content': field.humus_content,
+                    'soil_texture': field.soil_texture,
+                    'elevation': field.elevation,
+                    'slope': field.slope,
+                    'aspect': field.aspect,
+                }
+                writer.writerow(row)
+            ui.download(filename)
+            ui.notify(f'Параметры поля {field_id} выгружены в {filename}', color='positive')
+        ui.button('Выгрузить параметры по ID (CSV)', on_click=export_params_by_id).props('color=secondary')
 
     # Кнопка "Показать поле по ID"
     with ui.row().classes('mt-2'):

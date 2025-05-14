@@ -49,10 +49,4 @@ def main_page():
                 reg_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
                 ui.button('Зарегистрироваться', on_click=lambda: register(reg_username.value, reg_password.value, reg_email.value)).classes('w-full')
 
-    if getattr(ui.page, 'user_id', None):
-        def logout():
-            ui.page.user_id = None
-            ui.page.user_role = None
-            ui.notify('Вы вышли из аккаунта', type='positive')
-            ui.open('/')
-        ui.button('Выйти', on_click=logout).classes('absolute top-4 right-4 z-50') 
+    # Кнопка выхода не нужна на странице авторизации! 
