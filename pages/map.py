@@ -7,7 +7,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
-    # Только рисование и редактирование полигонов, увеличенная высота
+    # Карта с инструментом рисования полигона
     map_view = ui.leaflet(center=(51.505, -0.09), zoom=9, draw_control={
         'draw': {
             'polygon': True,
@@ -21,30 +21,26 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             'edit': True,
             'remove': True,
         },
-    }).classes('h-128 w-full')
+    }).classes('h-96 w-full')
 
-    # Получаем все поля пользователя из базы и рисуем их на карте
+    # Показываем все существующие поля пользователя как полигоны
     session = Session()
     user_fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
     session.close()
     for field in user_fields:
-        try:
-            coords = json.loads(field.coordinates)
-            latlngs = coords[0]
-            js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
-            ui.run_javascript(f'''
-                window.mapInstances = window.mapInstances || {{}};
-                document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
-                    const map = window.mapInstances['{map_view.id}'];
-                    if (map) {{
-                        L.polygon({js_coords}, {{color: 'blue', weight: 2}}).addTo(map);
-                    }}
-                }}, {{ once: true }});
-            ''')
-        except Exception as e:
-            print(f"Ошибка при отрисовке полигона: {e}")
+        coords = json.loads(field.coordinates)
+        latlngs = coords[0]
+        js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
+        ui.run_javascript(f'''
+            window.mapInstances = window.mapInstances || {{}};
+            document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
+                const map = window.mapInstances['{map_view.id}'];
+                if (map) {{
+                    L.polygon({js_coords}, {{color: 'blue', weight: 2}}).addTo(map);
+                }}
+            }}, {{ once: true }});
+        ''')
 
-    # Обработка создания нового полигона
     if action == 'create':
         def handle_field_creation(e: events.GenericEventArguments):
             coords = None
@@ -92,7 +88,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     ui.button('Сохранить', on_click=save).props('color=positive')
             dialog.open()
         map_view.on('draw:created', handle_field_creation)
-
     elif action == 'edit' and fields:
         try:
             field_id = int(fields)
@@ -148,6 +143,4 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             else:
                 ui.notify('Ошибка при обновлении поля', color='negative')
             session.close()
-
-    # Кнопка "Назад к полям"
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4') 
