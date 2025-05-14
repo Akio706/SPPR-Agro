@@ -77,22 +77,32 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     return
 
                 session = Session()
-               try:
-    field = Field(
-        user_id=ui.page.user_id,
-        name=name_input.value,
-        coordinates=json.dumps(coords),
-        group=group_input.value,
-        notes=notes_input.value,
-        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    )
-    session.add(field)
-    session.commit()
-    ui.notify('Поле успешно создано', color='positive')
-    dialog.close()
-    ui.run_javascript("window.location.href = '/fields';")
-except Exception as e:
-    ui.notify(f'Произошла ошибка: {str(e)}', type='negative')
-    session.rollback()
-finally:
-    session.close()
+                try:
+                    field = Field(
+                        user_id=ui.page.user_id,
+                        name=name_input.value,
+                        coordinates=json.dumps(coords),
+                        group=group_input.value,
+                        notes=notes_input.value,
+                        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    )
+                    session.add(field)
+                    session.commit()
+                    ui.notify('Поле успешно создано', color='positive')
+                    dialog.close()
+                    ui.run_javascript("window.location.href = '/fields';")
+                except Exception as e:
+                    ui.notify(f'Произошла ошибка: {str(e)}', type='negative')
+                    session.rollback()
+                finally:
+                    session.close()
+
+            ui.button('Сохранить', on_click=save).classes('q-mt-md')
+
+        dialog.open()
+
+    # Event handler for polygon drawing
+    @ui.page.on('polygon_drawn')
+    def handle_polygon_drawn(event):
+        coords = event['coords'][0]  # Extract the coordinates
+        show_save_dialog(coords)
