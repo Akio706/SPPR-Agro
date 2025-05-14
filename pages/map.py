@@ -54,33 +54,37 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     }}, {{ once: true }});
                 ''')
 
-            with ui.card().classes('w-full mt-4'):
-                ui.label('Список полей').classes('text-h5 q-mb-md')
-                columns = [
+            # Таблица и кнопка редактирования выбранного поля
+            rows = []
+            for field in user_fields:
+                rows.append({
+                    'id': field.id,
+                    'name': field.name,
+                    'created_at': field.created_at,
+                })
+            selected = []
+            def on_select(e):
+                selected.clear()
+                if hasattr(e, 'selected') and e.selected:
+                    selected.extend(e.selected)
+            ui.table(
+                columns=[
                     {'name': 'id', 'label': 'ID', 'field': 'id', 'align': 'left'},
                     {'name': 'name', 'label': 'Название', 'field': 'name', 'align': 'left'},
                     {'name': 'created_at', 'label': 'Создано', 'field': 'created_at', 'align': 'left'},
-                    {'name': 'edit', 'label': '', 'field': 'edit', 'align': 'left'},
-                ]
-                rows = []
-                for field in user_fields:
-                    rows.append({
-                        'id': field.id,
-                        'name': field.name,
-                        'created_at': field.created_at,
-                        'edit': field.id,
-                    })
-                def row_slot(row):
-                    ui.label(str(row['id'])).classes('q-mr-md')
-                    ui.label(row['name']).classes('q-mr-md')
-                    ui.label(row['created_at']).classes('q-mr-md')
-                    ui.button('Редактировать', on_click=lambda f_id=row['id']: ui.open(f'/map?action=edit&fields={f_id}')).props('color=primary')
-                ui.table(
-                    columns=columns,
-                    rows=rows,
-                    row_key='id',
-                    row_content=row_slot
-                ).classes('w-full')
+                ],
+                rows=rows,
+                row_key='id',
+                selection='single',
+                on_select=on_select
+            ).classes('w-full')
+            def edit_selected():
+                if not selected:
+                    ui.notify('Выберите поле для редактирования', type='warning')
+                    return
+                field_id = selected[0]['id']
+                ui.open(f'/map?action=edit&fields={field_id}')
+            ui.button('Редактировать выбранное поле', on_click=edit_selected).props('color=primary').classes('mt-2')
 
         # Обработка создания нового полигона
         if action == 'create':
