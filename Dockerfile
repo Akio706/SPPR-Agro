@@ -10,6 +10,15 @@ COPY . .
 # Даем права пользователю appuser (если он есть)
 RUN useradd -ms /bin/bash appuser && chown -R appuser:appuser /app
 
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    gdal-bin \
+    libgdal-dev \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+ENV GDAL_VERSION=3.6.0
+
 USER appuser
 
 EXPOSE 8080

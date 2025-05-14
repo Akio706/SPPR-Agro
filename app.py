@@ -195,87 +195,33 @@ def export_coords_from_db(user_id):
         return []
 
 
-def add_exported_coords_to_map(polygons, map_id):
-    # Очищаем старые полигоны
-    ui.run_javascript(f'''
-        // Убедимся, что переменная существует
-        window.mapInstances = window.mapInstances || {{}};
-        
-        // Используем событие для обеспечения готовности карты
-        document.addEventListener('leaflet_map_ready_{map_id}', function() {{
-            try {{
-                const map = window.mapInstances['{map_id}'];
-                if (map) {{
-                    console.log("Очистка полигонов через ID карты:", '{map_id}');
-                    
-                    map.eachLayer(function(layer) {{
-                        if (layer instanceof L.Polygon) {{
-                            map.removeLayer(layer);
-                        }}
-                    }});
-                }} else {{
-                    console.error("Карта не найдена для очистки полигонов, ID:", '{map_id}');
-                }}
-            }} catch(e) {{
-                console.error("Ошибка при очистке полигонов:", e);
-            }}
-        }}, {{ once: true }});
-        
-        // Пытаемся сразу выполнить операцию, если карта уже готова
-        if (window.mapInstances && window.mapInstances['{map_id}']) {{
-            try {{
-                const map = window.mapInstances['{map_id}'];
-                console.log("Карта уже доступна, очистка полигонов");
-                
-                map.eachLayer(function(layer) {{
-                    if (layer instanceof L.Polygon) {{
-                    map.removeLayer(layer); 
-                    }}
-                }});
-            }} catch(e) {{
-                console.error("Ошибка при прямой очистке полигонов:", e);
-            }}
-        }} else {{
-            console.log("Карта не готова, полигоны будут очищены после инициализации");
-            // Имитируем событие, если оно еще не произошло
-            // document.dispatchEvent(new CustomEvent('leaflet_map_ready_{map_id}'));
-        }}
-    ''')
-
-    # Подготовка данных полигонов для добавления
+def add_exported_coords_to_map(user_id, map_id):
+    session = Session()
+    polygons = session.query(Polygon).filter(Polygon.user_id == user_id).all()
     polygons_data = []
     for polygon in polygons:
-        latlngs = polygon['coords'][0]
-
-        if latlngs[0] != latlngs[-1]:  # Проверяем, замкнут ли полигон
+        points = session.query(PolygonPoint).filter(
+            PolygonPoint.polygon_id == polygon.id
+        ).order_by(PolygonPoint.id).all()
+        latlngs = [[point.lat, point.lng] for point in points]
+        if latlngs and latlngs[0] != latlngs[-1]:
             latlngs.append(latlngs[0])
-
-        print(f"Добавляем полигон: {latlngs}")
-
-        # Добавляем в список полигонов
         polygons_data.append({
-            'id': polygon['id'],
+            'id': polygon.id,
             'points': latlngs
         })
+    session.close()
 
-    # Передаем данные в JavaScript
     if polygons_data:
         polygons_json = json.dumps(polygons_data)
         ui.run_javascript(f'''
-            // Убедимся, что переменная существует
             window.mapInstances = window.mapInstances || {{}};
-            
-            // Используем событие для обеспечения готовности карты
             document.addEventListener('leaflet_map_ready_{map_id}', function() {{
                 try {{
                     const map = window.mapInstances['{map_id}'];
                     if (map) {{
-                        console.log("Добавление полигонов через ID карты:", '{map_id}');
-                        
-                        // Добавляем полигоны
                         const polygonsData = {polygons_json};
                         polygonsData.forEach(function(polygon) {{
-                            console.log("Добавляем полигон ID:", polygon.id);
                             L.polygon(polygon.points, {{
                                 color: 'red',
                                 weight: 2,
@@ -284,42 +230,12 @@ def add_exported_coords_to_map(polygons, map_id):
                                 id: 'polygon_' + polygon.id
                             }}).addTo(map);
                         }});
-                    }} else {{
-                        console.error("Карта не найдена для добавления полигонов, ID:", '{map_id}');
                     }}
                 }} catch(e) {{
                     console.error("Ошибка при добавлении полигонов:", e);
                 }}
             }}, {{ once: true }});
-            
-            // Пытаемся сразу выполнить операцию, если карта уже готова
-            if (window.mapInstances && window.mapInstances['{map_id}']) {{
-                try {{
-                    const map = window.mapInstances['{map_id}'];
-                    console.log("Карта уже доступна, добавление полигонов");
-                    
-                    // Добавляем полигоны
-                    const polygonsData = {polygons_json};
-                    polygonsData.forEach(function(polygon) {{
-                        console.log("Добавляем полигон ID:", polygon.id);
-                        L.polygon(polygon.points, {{
-                            color: 'red',
-                            weight: 2,
-                            opacity: 0.7,
-                            fillOpacity: 0.3,
-                            id: 'polygon_' + polygon.id
-                        }}).addTo(map);
-                    }});
-                }} catch(e) {{
-                    console.error("Ошибка при прямом добавлении полигонов:", e);
-                }}
-            }} else {{
-                console.log("Карта не готова, полигоны будут добавлены после инициализации");
-                // Имитируем событие, если оно еще не произошло
-                // document.dispatchEvent(new CustomEvent('leaflet_map_ready_{map_id}'));
-            }}
         ''')
-
     ui.notify('Полигоны успешно добавлены на карту', color='positive')
 
 # Функция для загрузки локальной карты
