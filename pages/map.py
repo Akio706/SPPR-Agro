@@ -7,9 +7,45 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
-    # Карта без инструмента рисования (draw_control временно отключён из-за ошибки featureGroup)
+    # Карта без draw_control, но с поддержкой рисования через кастомный JS
     map_view = ui.leaflet(center=(51.505, -0.09), zoom=9).style('height: 400px; width: 100%;')
-    # TODO: Вернуть draw_control, когда появится поддержка featureGroup в NiceGUI или будет найден обход
+
+    # Кнопка для запуска режима рисования
+    def start_draw():
+        ui.run_javascript(f"""
+            (function() {{
+                var map = window.mapInstances['{map_view.id}'];
+                if (!map) return;
+                if (!window.drawnItems) {{
+                    window.drawnItems = new L.FeatureGroup();
+                    map.addLayer(window.drawnItems);
+                }}
+                if (!window._drawControl) {{
+                    window._drawControl = new L.Control.Draw({{
+                        edit: {{
+                            featureGroup: window.drawnItems
+                        }},
+                        draw: {{
+                            polygon: true,
+                            marker: false,
+                            circle: false,
+                            rectangle: false,
+                            polyline: false,
+                            circlemarker: false
+                        }}
+                    }});
+                    map.addControl(window._drawControl);
+                }}
+                map.on(L.Draw.Event.CREATED, function (e) {{
+                    var layer = e.layer;
+                    window.drawnItems.addLayer(layer);
+                    var coords = layer.getLatLngs();
+                    window.nicegui.send_event('polygon_drawn', {{coords: coords}});
+                }});
+            }})();
+        """)
+
+    ui.button('Нарисовать поле', on_click=start_draw).props('color=primary').classes('mb-4')
 
     # Показываем все существующие поля пользователя как полигоны
     session = Session()
@@ -29,54 +65,52 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             }}, {{ once: true }});
         ''')
 
-    if action == 'create':
-        def handle_field_creation(e: events.GenericEventArguments):
-            coords = None
-            if '_latlngs' in e.args['layer']:
-                coords = e.args['layer']['_latlngs']
-            elif '_latlng' in e.args['layer']:
-                coords = e.args['layer']['_latlng']
-            else:
-                ui.notify('Не удалось получить координаты объекта', color='negative')
-                return
+    def show_save_dialog(coords):
+        dialog = ui.dialog()
+        with dialog, ui.card():
+            ui.label('Сохранить новое поле').classes('text-h6 q-mb-md')
+            name_input = ui.input(label='Название').classes('w-full q-mb-sm')
+            group_input = ui.input(label='Группа').classes('w-full q-mb-sm')
+            notes_input = ui.textarea(label='Заметки').classes('w-full q-mb-md')
+            def save():
+                if not name_input.value:
+                    ui.notify('Введите название', type='warning')
+                    return
+                session = Session()
+                try:
+                    field = Field(
+                        user_id=ui.page.user_id,
+                        name=name_input.value,
+                        coordinates=json.dumps(coords),
+                        group=group_input.value,
+                        notes=notes_input.value,
+                        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    )
+                    session.add(field)
+                    session.commit()
+                    ui.notify('Поле успешно создано', color='positive')
+                    dialog.close()
+                    ui.open('/fields')
+                except Exception as e:
+                    session.rollback()
+                    ui.notify(f'Ошибка при создании поля: {e}', color='negative')
+                finally:
+                    session.close()
+            with ui.row().classes('w-full justify-end'):
+                ui.button('Отмена', on_click=dialog.close).props('flat')
+                ui.button('Сохранить', on_click=save).props('color=positive')
+        dialog.open()
+
+    @ui.event('polygon_drawn')
+    def on_polygon_drawn(e):
+        coords = e.args['coords']
+        # Leaflet возвращает массив с вложенными массивами, преобразуем к формату [[{'lat':..., 'lng':...}, ...]]
+        if coords and isinstance(coords, list):
             show_save_dialog(coords)
-        def show_save_dialog(coords):
-            dialog = ui.dialog()
-            with dialog, ui.card():
-                ui.label('Сохранить новое поле').classes('text-h6 q-mb-md')
-                name_input = ui.input(label='Название').classes('w-full q-mb-sm')
-                group_input = ui.input(label='Группа').classes('w-full q-mb-sm')
-                notes_input = ui.textarea(label='Заметки').classes('w-full q-mb-md')
-                def save():
-                    if not name_input.value:
-                        ui.notify('Введите название', type='warning')
-                        return
-                    session = Session()
-                    try:
-                        field = Field(
-                            user_id=ui.page.user_id,
-                            name=name_input.value,
-                            coordinates=json.dumps(coords),
-                            group=group_input.value,
-                            notes=notes_input.value,
-                            created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        )
-                        session.add(field)
-                        session.commit()
-                        ui.notify('Поле успешно создано', color='positive')
-                        dialog.close()
-                        ui.open('/fields')
-                    except Exception as e:
-                        session.rollback()
-                        ui.notify(f'Ошибка при создании поля: {e}', color='negative')
-                    finally:
-                        session.close()
-                with ui.row().classes('w-full justify-end'):
-                    ui.button('Отмена', on_click=dialog.close).props('flat')
-                    ui.button('Сохранить', on_click=save).props('color=positive')
-            dialog.open()
-        map_view.on('draw:created', handle_field_creation)
-    elif action == 'edit' and fields:
+        else:
+            ui.notify('Не удалось получить координаты полигона', color='negative')
+
+    if action == 'edit' and fields:
         try:
             field_id = int(fields)
         except (TypeError, ValueError):
