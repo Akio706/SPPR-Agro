@@ -11,12 +11,7 @@ def main_page():
             ui.page.user_id = user['user_id']
             ui.page.user_role = user['role']
             ui.notify(f'Добро пожаловать, {username}!', type='positive')
-            with ui.row():
-                ui.link('Карта полей', '/map').classes('mt-4')
-                ui.link('Управление полями', '/fields').classes('mt-4')
-                if user['role'] == 'administrator':
-                    ui.link('Управление пользователями', '/users').classes('mt-4')
-                ui.link('Аналитика', '/analytics').classes('mt-4')
+            ui.open('/map')
         else:
             ui.notify('Неверное имя пользователя или пароль', type='negative')
 
@@ -33,21 +28,22 @@ def main_page():
         else:
             ui.notify(message, type='negative')
 
-    with ui.card().classes('w-96 mx-auto mt-20'):
-        ui.label('Вход в систему').classes('text-h4 q-mb-md')
-        with ui.tabs().classes('w-full') as tabs:
-            ui.tab('Вход')
-            ui.tab('Регистрация')
-        with ui.tab_panels(tabs, value='Вход').classes('w-full'):
-            with ui.tab_panel('Вход'):
-                login_username = ui.input(label='Имя пользователя').classes('w-full q-mb-md')
-                login_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
-                ui.button('Войти', on_click=lambda: login(login_username.value, login_password.value)).classes('w-full')
-            with ui.tab_panel('Регистрация'):
-                reg_username = ui.input(label='Имя пользователя').classes('w-full q-mb-md')
-                reg_email = ui.input(label='Email').classes('w-full q-mb-md')
-                reg_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
-                ui.button('Зарегистрироваться', on_click=lambda: register(reg_username.value, reg_password.value, reg_email.value)).classes('w-full')
+    with ui.column().classes('items-center justify-center min-h-screen bg-grey-2'):
+        with ui.card().classes('w-96 shadow-lg'):
+            ui.label('Вход в систему').classes('text-h4 q-mb-md text-center')
+            with ui.tabs().classes('w-full') as tabs:
+                ui.tab('Вход')
+                ui.tab('Регистрация')
+            with ui.tab_panels(tabs, value='Вход').classes('w-full'):
+                with ui.tab_panel('Вход'):
+                    login_username = ui.input(label='Имя пользователя').classes('w-full q-mb-md')
+                    login_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
+                    ui.button('Войти', on_click=lambda: login(login_username.value, login_password.value)).classes('w-full bg-primary text-white')
+                with ui.tab_panel('Регистрация'):
+                    reg_username = ui.input(label='Имя пользователя').classes('w-full q-mb-md')
+                    reg_email = ui.input(label='Email').classes('w-full q-mb-md')
+                    reg_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
+                    ui.button('Зарегистрироваться', on_click=lambda: register(reg_username.value, reg_password.value, reg_email.value)).classes('w-full bg-secondary text-white')
 
     if getattr(ui.page, 'user_id', None):
         def logout():
@@ -55,4 +51,5 @@ def main_page():
             ui.page.user_role = None
             ui.notify('Вы вышли из аккаунта', type='positive')
             ui.open('/')
-        ui.button('Выйти', on_click=logout).classes('absolute top-4 right-4 z-50') 
+        with ui.row().classes('absolute top-0 right-0 z-50 p-4'):
+            ui.button('Выйти', on_click=logout).props('color=negative').classes('q-ml-md') 

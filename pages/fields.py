@@ -9,6 +9,15 @@ def fields_page():
         return ui.open('/')
     selected = []
 
+    def logout():
+        ui.page.user_id = None
+        ui.page.user_role = None
+        ui.notify('Вы вышли из аккаунта', type='positive')
+        ui.open('/')
+
+    with ui.row().classes('absolute top-0 right-0 z-50 p-4'):
+        ui.button('Выйти', on_click=logout).props('color=negative').classes('q-ml-md')
+
     def on_select(e):
         selected.clear()
         if hasattr(e, 'selected') and e.selected:
@@ -58,22 +67,23 @@ def fields_page():
         fields_table.rows = result
         return result
 
-    with ui.card().classes('w-full'):
-        ui.label('Управление полями').classes('text-h4 q-mb-md')
-        with ui.row().classes('q-mb-md'):
-            ui.button('Создать новое поле', on_click=lambda: ui.open('/map?action=create')).props('color=positive')
-        fields_table = ui.table(
-            columns=[
-                {'name': 'id', 'label': 'ID', 'field': 'id', 'align': 'left'},
-                {'name': 'name', 'label': 'Название', 'field': 'name', 'align': 'left'},
-                {'name': 'created_at', 'label': 'Создано', 'field': 'created_at', 'align': 'left'},
-            ],
-            rows=[],
-            row_key='id',
-            selection='single',
-            on_select=on_select
-        ).classes('w-full')
-        ui.button('Редактировать выбранное поле', on_click=edit_selected).props('color=primary')
+    with ui.column().classes('items-center justify-center min-h-screen bg-grey-2'):
+        with ui.card().classes('w-full max-w-4xl shadow-lg mt-8'):
+            ui.label('Управление полями').classes('text-h4 q-mb-md text-center')
+            with ui.row().classes('q-mb-md justify-center'):
+                ui.button('Создать новое поле', on_click=lambda: ui.open('/map?action=create')).props('color=positive').classes('q-mr-md')
+                ui.button('Редактировать выбранное поле', on_click=edit_selected).props('color=primary')
+            fields_table = ui.table(
+                columns=[
+                    {'name': 'id', 'label': 'ID', 'field': 'id', 'align': 'left'},
+                    {'name': 'name', 'label': 'Название', 'field': 'name', 'align': 'left'},
+                    {'name': 'created_at', 'label': 'Создано', 'field': 'created_at', 'align': 'left'},
+                ],
+                rows=[],
+                row_key='id',
+                selection='single',
+                on_select=on_select
+            ).classes('w-full')
     load_fields()
 
 def delete_field(field_id, user_id):
