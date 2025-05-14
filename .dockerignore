@@ -80,6 +80,7 @@ local/
 
 # 15. Miscellaneous
 *.db  # Ignore SQLite DBs unless needed for the build context
+map_data.db
 
 # 16. Exclude empty directories (Docker ignores empty dirs by default)
 

@@ -1,44 +1,61 @@
 services:
-  python-app:
+  python-root:
     build:
       context: .
-    container_name: python-app
+      dockerfile: Dockerfile
+    container_name: python-root
     restart: unless-stopped
     init: true
+    # env_file: .env  # Uncomment if .env file exists in project root
     ports:
-      - "8080:8080"  # Expose the app on port 8080 as per Dockerfile and README
-    # env_file: ./.env  # Uncomment if .env file exists
-    # If you want to use PostgreSQL, set DATABASE_URL as described in the README
-    # environment:
-    #   - DATABASE_URL=postgresql+psycopg2://user:password@host:5432/dbname
+      - "8080:8080"  # Expose app on port 8080
     depends_on:
-      - postgres  # Only needed if you use PostgreSQL as your database
+      - postgres
     networks:
-      - app-net
+      - backend
+    # The app expects DATABASE_URL for PostgreSQL, see README for details
+    environment:
+      # Set DATABASE_URL to use the internal postgres service by default
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/postgres
+
+  python-nicegui:
+    build:
+      context: ./niceGUI
+      dockerfile: ../niceGUIDockerfile
+    container_name: python-nicegui
+    restart: unless-stopped
+    init: true
+    # env_file: ./niceGUI/.env  # Uncomment if .env file exists in niceGUI/
+    ports:
+      - "8081:8080"  # Expose niceGUI app on a different host port
+    depends_on:
+      - postgres
+    networks:
+      - backend
+    environment:
+      # Set DATABASE_URL to use the internal postgres service by default
+      DATABASE_URL: postgresql+psycopg2://postgres:postgres@postgres:5432/postgres
 
   postgres:
     image: postgres:latest
     container_name: postgres
     restart: unless-stopped
     environment:
-      POSTGRES_USER: user
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: dbname
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U user"]
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 10s
       timeout: 5s
       retries: 5
     networks:
-      - app-net
-    # Uncomment the following line if you want to expose PostgreSQL outside Docker
-    # ports:
-    #   - "5432:5432"
+      - backend
+    volumes:
+      - pgdata:/var/lib/postgresql/data
 
 networks:
-  app-net:
+  backend:
     driver: bridge
 
 volumes:

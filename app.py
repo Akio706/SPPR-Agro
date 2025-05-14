@@ -1,7 +1,6 @@
 from nicegui import binding, events, ui
 from sqlalchemy import create_engine, Column, Integer, Float, String, ForeignKey, Text, JSON
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker, relationship
+from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from datetime import datetime
 import json
 import uuid
@@ -12,13 +11,14 @@ import csv
 import requests
 import folium
 
-# Создаем базу данных SQLAlchemy
-DATABASE_URL = os.getenv('DATABASE_URL', 'sqlite:///map_data.db')
+# Модели ORM
+Base = declarative_base()
+DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql+psycopg2://agro:agro_pass@db:5432/agrofields')
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 
-# Модели ORM
-Base = declarative_base()
+# Создание таблиц, если их нет
+Base.metadata.create_all(engine)
 
 class User(Base):
     __tablename__ = 'users'
@@ -772,8 +772,33 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     if not name_input.value:
                         ui.notify('Введите название', type='warning')
                         return
+                    session = Session()
                     try:
-                        session = Session()
+                        # 1. Сохраняем сам полигон (Polygon)
+                        polygon = Polygon(
+                            user_id=ui.page.user_id,
+                            coords=json.dumps(coords)
+                        )
+                        session.add(polygon)
+                        session.flush()  # Получаем polygon.id
+
+                        # 2. Проверяем структуру coords
+                        if not (isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list)):
+                            raise ValueError(f"Некорректная структура координат: {coords}")
+
+                        # 3. Сохраняем точки полигона (PolygonPoint)
+                        for point in coords[0]:
+                            if not all(k in point for k in ('lat', 'lng')):
+                                raise ValueError(f"Некорректная точка: {point}")
+                            point_obj = PolygonPoint(
+                                user_id=ui.page.user_id,
+                                lat=point['lat'],
+                                lng=point['lng'],
+                                polygon_id=polygon.id
+                            )
+                            session.add(point_obj)
+
+                        # 4. Создаём запись в таблице Field
                         field = Field(
                             user_id=ui.page.user_id,
                             name=name_input.value,
@@ -783,24 +808,17 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                             created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         )
                         session.add(field)
-                        session.commit()
-                        # Сохраняем точки полигона
-                        polygon_id = field.id
-                        for point in coords[0]:
-                            point_obj = PolygonPoint(
-                                user_id=ui.page.user_id,
-                                lat=point['lat'],
-                                lng=point['lng'],
-                                polygon_id=polygon_id
-                            )
-                            session.add(point_obj)
+
                         session.commit()
                         ui.notify('Объект успешно создан', color='positive')
                         dialog.close()
                         ui.open('/fields')
                     except Exception as e:
+                        session.rollback()
                         print(f"Ошибка при создании объекта: {e}")
-                        ui.notify('Ошибка при создании объекта', color='negative')
+                        ui.notify(f'Ошибка при создании объекта: {e}', color='negative')
+                    finally:
+                        session.close()
                 with ui.row().classes('w-full justify-end'):
                     ui.button('Отмена', on_click=dialog.close).props('flat')
                     ui.button('Сохранить', on_click=save).props('color=positive')
