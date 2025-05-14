@@ -101,8 +101,10 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
 
         dialog.open()
 
-    # Event handler for polygon drawing
-    @ui.page.on('polygon_drawn')
+    # Handle the polygon_drawn event
     def handle_polygon_drawn(event):
         coords = event['coords'][0]  # Extract the coordinates
         show_save_dialog(coords)
+
+    # Register the NiceGUI event handler
+    ui.on('polygon_drawn', handle_polygon_drawn)
