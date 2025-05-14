@@ -16,32 +16,45 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             (function() {{
                 var map = window.mapInstances['{map_view.id}'];
                 if (!map) return;
-                if (!window.drawnItems) {{
+                // Удаляем старый drawControl, если он был
+                if (window._drawControl) {{
+                    map.removeControl(window._drawControl);
+                    window._drawControl = null;
+                }}
+                // Очищаем старые нарисованные объекты
+                if (window.drawnItems) {{
+                    window.drawnItems.clearLayers();
+                }} else {{
                     window.drawnItems = new L.FeatureGroup();
                     map.addLayer(window.drawnItems);
                 }}
-                if (!window._drawControl) {{
-                    window._drawControl = new L.Control.Draw({{
-                        edit: {{
-                            featureGroup: window.drawnItems
-                        }},
-                        draw: {{
-                            polygon: true,
-                            marker: false,
-                            circle: false,
-                            rectangle: false,
-                            polyline: false,
-                            circlemarker: false
-                        }}
-                    }});
-                    map.addControl(window._drawControl);
+                window._drawControl = new L.Control.Draw({{
+                    edit: {{
+                        featureGroup: window.drawnItems
+                    }},
+                    draw: {{
+                        polygon: true,
+                        marker: false,
+                        circle: false,
+                        rectangle: false,
+                        polyline: false,
+                        circlemarker: false
+                    }}
+                }});
+                map.addControl(window._drawControl);
+                // Удаляем старый обработчик, если был
+                if (window._drawCreatedHandler) {{
+                    map.off(L.Draw.Event.CREATED, window._drawCreatedHandler);
                 }}
-                map.on(L.Draw.Event.CREATED, function (e) {{
+                window._drawCreatedHandler = function (e) {{
                     var layer = e.layer;
                     window.drawnItems.addLayer(layer);
                     var coords = layer.getLatLngs();
-                    window.nicegui.send_event('polygon_drawn', {{coords: coords}});
-                }});
+                    // Преобразуем координаты к формату [[{'lat':..., 'lng':...}, ...]]
+                    var result = [coords[0].map(function(pt) {{ return {{lat: pt.lat, lng: pt.lng}}; }})];
+                    window.nicegui.send_event('polygon_drawn', {{coords: result}});
+                }};
+                map.on(L.Draw.Event.CREATED, window._drawCreatedHandler);
             }})();
         """)
 
