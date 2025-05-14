@@ -28,28 +28,37 @@ def fields_page():
         field_id = selected[0]['id']
         ui.open(f'/map?action=edit&fields={field_id}')
 
-    session = Session()
-    fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
-    session.close()
-    rows = []
-    for field in fields:
-        rows.append({
-            'id': field.id,
-            'name': field.name,
-            'created_at': field.created_at,
-        })
+    def create_field():
+        ui.open('/map?action=create')
 
-    with ui.card().classes('w-full max-w-3xl mx-auto mt-8'):
-        ui.label('Список полей').classes('text-h5 q-mb-md')
-        fields_table = ui.table(
-            columns=[
-                {'name': 'id', 'label': 'ID', 'field': 'id', 'align': 'left'},
-                {'name': 'name', 'label': 'Название', 'field': 'name', 'align': 'left'},
-                {'name': 'created_at', 'label': 'Создано', 'field': 'created_at', 'align': 'left'},
-            ],
-            rows=rows,
-            row_key='id',
-            selection='single',
-            on_select=on_select
-        ).classes('w-full')
-        ui.button('Редактировать выбранное поле', on_click=edit_selected).props('color=primary').classes('mt-2') 
+    def load_fields():
+        session = Session()
+        fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
+        session.close()
+        rows = []
+        for field in fields:
+            rows.append({
+                'id': field.id,
+                'name': field.name,
+                'created_at': field.created_at,
+            })
+        fields_table.rows = rows
+
+    with ui.column().classes('items-center justify-center min-h-screen bg-grey-2'):
+        with ui.card().classes('w-full max-w-3xl mx-auto mt-8 shadow-lg'):
+            ui.label('Список полей').classes('text-h5 q-mb-md text-center')
+            with ui.row().classes('q-mb-md justify-center'):
+                ui.button('Создать новое поле', on_click=create_field).props('color=positive').classes('q-mr-md')
+                ui.button('Редактировать выбранное поле', on_click=edit_selected).props('color=primary')
+            fields_table = ui.table(
+                columns=[
+                    {'name': 'id', 'label': 'ID', 'field': 'id', 'align': 'left'},
+                    {'name': 'name', 'label': 'Название', 'field': 'name', 'align': 'left'},
+                    {'name': 'created_at', 'label': 'Создано', 'field': 'created_at', 'align': 'left'},
+                ],
+                rows=[],
+                row_key='id',
+                selection='single',
+                on_select=on_select
+            ).classes('w-full')
+    load_fields()
