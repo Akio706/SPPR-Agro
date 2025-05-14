@@ -758,6 +758,71 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     map_view.set_center((lat, lng))
             for field_id in field_ids:
                 highlight_polygon(field_id, ui.page.user_id, map_view.id)
+    elif action == 'edit' and fields:
+        try:
+            field_id = int(fields)
+        except (TypeError, ValueError):
+            ui.notify('Некорректный ID поля', color='negative')
+            return
+        session = Session()
+        field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
+        session.close()
+        if not field:
+            ui.notify('Поле не найдено', color='negative')
+            return
+        coords = json.loads(field.coordinates)
+        latlngs = coords[0]
+        # Центр полигона
+        lat = sum(p['lat'] for p in latlngs) / len(latlngs)
+        lng = sum(p['lng'] for p in latlngs) / len(latlngs)
+        map_view.set_center((lat, lng))
+        # Добавляем полигон на карту и включаем режим редактирования
+        poly_id = f'edit_poly_{field_id}'
+        js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
+        ui.run_javascript(f'''
+            window.mapInstances = window.mapInstances || {{}};
+            document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
+                const map = window.mapInstances['{map_view.id}'];
+                if (map) {{
+                    let poly = L.polygon({js_coords}, {{color: 'orange', weight: 3, id: '{poly_id}'}}).addTo(map);
+                    map.fitBounds(poly.getBounds());
+                    // Включаем режим редактирования
+                    if (map.editTools) {{
+                        poly.enableEdit();
+                    }}
+                    // Сохраняем ссылку на полигон
+                    window._editPoly = poly;
+                }}
+            }}, {{ once: true }});
+        ''')
+        def save_edited():
+            # Получаем новые координаты из JS
+            ui.run_javascript(f'''
+                (function() {{
+                    const poly = window._editPoly;
+                    if (!poly) {{
+                        window.nicegui.notify('Полигон не найден для сохранения', 'negative');
+                        return;
+                    }}
+                    const latlngs = poly.getLatLngs()[0].map(pt => {{ return {{lat: pt.lat, lng: pt.lng}} }});
+                    window.nicegui.send_event('save_edited_poly', {{latlngs: latlngs}});
+                }})();
+            ''')
+        @ui.event('save_edited_poly')
+        def on_save_edited_poly(e):
+            new_coords = [e.args['latlngs']]
+            session = Session()
+            field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
+            if field:
+                field.coordinates = json.dumps(new_coords)
+                field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                session.commit()
+                ui.notify('Поле успешно обновлено', color='positive')
+                ui.open('/fields')
+            else:
+                ui.notify('Ошибка при обновлении поля', color='negative')
+            session.close()
+        ui.button('Сохранить изменения', on_click=save_edited).classes('mt-4')
 
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
 
@@ -900,12 +965,19 @@ def fields_page():
             columns=[
                 {'name': 'id', 'label': 'ID', 'field': 'id', 'align': 'left'},
                 {'name': 'name', 'label': 'Название', 'field': 'name', 'align': 'left'},
-                {'name': 'created_at', 'label': 'Создано', 'field': 'created_at', 'align': 'left'}
+                {'name': 'created_at', 'label': 'Создано', 'field': 'created_at', 'align': 'left'},
+                {'name': 'actions', 'label': 'Действия', 'field': 'actions', 'align': 'center'},
             ],
             rows=[],
             row_key='id',
             selection='multiple',
-            on_select=on_select
+            on_select=on_select,
+            row_content=lambda row: [
+                row['id'],
+                row['name'],
+                row['created_at'],
+                ui.button('Редактировать', on_click=lambda r=row: ui.open(f"/map?action=edit&fields={r['id']}"))
+            ]
         ).classes('w-full')
         # --- Обходной способ удаления по id ---
         with ui.row().classes('q-mt-md'):
