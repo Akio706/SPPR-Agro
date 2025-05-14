@@ -53,6 +53,19 @@ def fields_page():
         field_id = selected[0]['id']
         ui.open(f'/map?action=edit&fields={field_id}')
 
+    def show_field_details(field_id):
+        session = Session()
+        field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
+        session.close()
+        if not field:
+            ui.notify('Поле не найдено', color='negative')
+            return
+        with ui.dialog() as dialog, ui.card():
+            ui.label(f"Детали поля: {field.name}").classes('text-h6 q-mb-md')
+            ui.label(f"Создано: {field.created_at}")
+            with ui.row().classes('w-full justify-end q-mt-md'):
+                ui.button('Закрыть', on_click=dialog.close).props('flat')
+
     def load_fields():
         session = Session()
         fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
@@ -67,12 +80,34 @@ def fields_page():
         fields_table.rows = result
         return result
 
+    def filter_fields():
+        session = Session()
+        fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
+        session.close()
+        if search_text.value:
+            filtered = [f for f in fields if search_text.value.lower() in f.name.lower()]
+        else:
+            filtered = fields
+        result = []
+        for field in filtered:
+            result.append({
+                'id': field.id,
+                'name': field.name,
+                'created_at': field.created_at,
+            })
+        fields_table.rows = result
+
     with ui.column().classes('items-center justify-center min-h-screen bg-grey-2'):
         with ui.card().classes('w-full max-w-4xl shadow-lg mt-8'):
             ui.label('Управление полями').classes('text-h4 q-mb-md text-center')
             with ui.row().classes('q-mb-md justify-center'):
                 ui.button('Создать новое поле', on_click=lambda: ui.open('/map?action=create')).props('color=positive').classes('q-mr-md')
-                ui.button('Редактировать выбранное поле', on_click=edit_selected).props('color=primary')
+                ui.button('Удалить выбранные', on_click=delete_selected_fields).props('color=negative').classes('q-mr-md')
+                ui.button('Редактировать выбранное', on_click=edit_selected).props('color=primary').classes('q-mr-md')
+            with ui.row().classes('q-mb-md justify-center'):
+                search_text = ui.input(label='Поиск по названию').classes('q-mr-md')
+                search_text.on('change', filter_fields)
+                ui.button('Экспортировать в CSV', on_click=lambda: export_all_fields_to_csv(ui.page.user_id, f'fields_{datetime.now().strftime("%Y%m%d_%H%M%S")}.csv')).props('color=secondary')
             fields_table = ui.table(
                 columns=[
                     {'name': 'id', 'label': 'ID', 'field': 'id', 'align': 'left'},
@@ -81,9 +116,11 @@ def fields_page():
                 ],
                 rows=[],
                 row_key='id',
-                selection='single',
+                selection='multiple',
                 on_select=on_select
             ).classes('w-full')
+            ui.button('Показать детали выбранного', on_click=lambda: show_field_details(selected[0]['id']) if selected else ui.notify('Выберите поле', type='warning')).props('color=info').classes('mt-2')
+            ui.button('Назад к карте', on_click=lambda: ui.open('/map')).props('color=secondary').classes('mt-4')
     load_fields()
 
 def delete_field(field_id, user_id):
