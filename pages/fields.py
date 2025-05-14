@@ -108,6 +108,28 @@ def fields_page():
             ui.notify(f'Параметры поля {field_id} выгружены в {filename}', color='positive')
         ui.button('Выгрузить параметры по ID (CSV)', on_click=export_params_by_id).props('color=secondary')
 
+    # Кнопка "Удалить поле по ID"
+    with ui.row().classes('mt-2'):
+        delete_id_input = ui.input(label='ID для удаления').props('type=number').classes('q-mr-md')
+        def delete_by_id():
+            try:
+                field_id = int(delete_id_input.value)
+            except (TypeError, ValueError):
+                ui.notify('Введите корректный ID', color='warning')
+                return
+            session = Session()
+            field = session.query(Field).filter(Field.id == field_id, Field.user_id == ui.page.user_id).first()
+            if not field:
+                ui.notify('Поле не найдено', color='negative')
+                session.close()
+                return
+            session.delete(field)
+            session.commit()
+            session.close()
+            ui.notify(f'Поле с id={field_id} удалено', color='positive')
+            ui.open('/fields')
+        ui.button('Удалить по id', on_click=delete_by_id).props('color=negative')
+
     # Кнопка "Показать поле по ID"
     with ui.row().classes('mt-2'):
         show_id_input = ui.input(label='ID для показа на карте').props('type=number').classes('q-mr-md')
