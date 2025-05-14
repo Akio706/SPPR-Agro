@@ -101,14 +101,14 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 ui.button('Сохранить', on_click=save).props('color=positive')
         dialog.open()
 
-    @ui.event('polygon_drawn')
     def on_polygon_drawn(e):
         coords = e.args['coords']
-        # Leaflet возвращает массив с вложенными массивами, преобразуем к формату [[{'lat':..., 'lng':...}, ...]]
         if coords and isinstance(coords, list):
             show_save_dialog(coords)
         else:
             ui.notify('Не удалось получить координаты полигона', color='negative')
+
+    ui.on('polygon_drawn', on_polygon_drawn)
 
     if action == 'edit' and fields:
         try:
