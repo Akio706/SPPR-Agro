@@ -108,7 +108,7 @@ def initialize_db():
         Base.metadata.create_all(engine)
         print("База данных успешно инициализирована.")
         session = Session()
-        test_username = 'testadmin'
+        test_username = 'Timka'
         test_email = 'testadmin@example.com'
         test_user = session.query(User).filter(User.username == test_username).first()
         if not test_user:
@@ -116,7 +116,7 @@ def initialize_db():
             user = User(
                 user_id=user_id,
                 username=test_username,
-                password='testpassword',
+                password='Kolhoz',
                 email=test_email,
                 role='administrator',
                 created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")

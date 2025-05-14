@@ -7,7 +7,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
-    # Только рисование полигонов
+    # Только рисование и редактирование полигонов
     map_view = ui.leaflet(center=(51.505, -0.09), zoom=9, draw_control={
         'draw': {
             'polygon': True,
@@ -18,8 +18,8 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             'circlemarker': False,
         },
         'edit': {
-            'edit': False,
-            'remove': False,
+            'edit': True,
+            'remove': True,
         },
     }).classes('h-96 w-full')
 
