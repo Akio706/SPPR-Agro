@@ -534,6 +534,25 @@ def initialize_db():
     try:
         Base.metadata.create_all(engine)
         print("База данных успешно инициализирована.")
+        # Добавляем тестового пользователя-администратора, если его нет
+        session = Session()
+        test_username = 'testadmin'
+        test_email = 'testadmin@example.com'
+        test_user = session.query(User).filter(User.username == test_username).first()
+        if not test_user:
+            user_id = str(uuid.uuid4())
+            user = User(
+                user_id=user_id,
+                username=test_username,
+                password='testpassword',  # В реальном проекте пароль должен быть хеширован
+                email=test_email,
+                role='administrator',
+                created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            )
+            session.add(user)
+            session.commit()
+            print(f"Тестовый пользователь '{test_username}' добавлен.")
+        session.close()
     except Exception as e:
         print(f"Ошибка при инициализации базы данных: {e}")
 
@@ -944,7 +963,12 @@ def fields_page():
 
     def load_fields():
         fields = get_user_fields(ui.page.user_id)
-        print('rows for table:', fields)  # Для отладки
+        # Добавляем поле actions с кнопкой для каждой строки
+        for f in fields:
+            f['actions'] = ui.button(
+                'Редактировать',
+                on_click=lambda field_id=f['id']: ui.open(f'/map?action=edit&fields={field_id}')
+            )
         fields_table.rows = fields
         return fields
 
@@ -971,13 +995,7 @@ def fields_page():
             rows=[],
             row_key='id',
             selection='multiple',
-            on_select=on_select,
-            row_content=lambda row: [
-                row['id'],
-                row['name'],
-                row['created_at'],
-                ui.button('Редактировать', on_click=lambda r=row: ui.open(f"/map?action=edit&fields={r['id']}"))
-            ]
+            on_select=on_select
         ).classes('w-full')
         # --- Обходной способ удаления по id ---
         with ui.row().classes('q-mt-md'):
