@@ -15,60 +15,62 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
 
     map_view = ui.leaflet(center=(51.505, -0.09), zoom=9).style('height: 400px; width: 100%;')
 
-    # Инициализация инструментов рисования после полной загрузки карты
-    ui.run_javascript(f"""
-    document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
-        var map = window.mapInstances['{map_view.id}'];
-        if (!map) return;
-        if (window._drawControl) {{
-            map.removeControl(window._drawControl);
-            window._drawControl = null;
-        }}
-        if (window.drawnItems) {{
-            window.drawnItems.clearLayers();
-        }} else {{
-            window.drawnItems = new L.FeatureGroup();
-            map.addLayer(window.drawnItems);
-        }}
-        window._drawControl = new L.Control.Draw({{
-            edit: {{
-                featureGroup: window.drawnItems
-            }},
-            draw: {{
-                polygon: true,
-                marker: true,
-                circle: true,
-                rectangle: true,
-                polyline: true,
-                circlemarker: true
+    if action == 'create':
+        # Инициализация режима рисования полигона сразу после загрузки карты
+        ui.run_javascript(f"""
+        document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
+            var map = window.mapInstances['{map_view.id}'];
+            if (!map) return;
+            if (window._drawControl) {{
+                map.removeControl(window._drawControl);
+                window._drawControl = null;
             }}
-        }});
-        map.addControl(window._drawControl);
-        if (window._drawCreatedHandler) {{
-            map.off(L.Draw.Event.CREATED, window._drawCreatedHandler);
-        }}
-        window._drawCreatedHandler = function (e) {{
-            var layer = e.layer;
-            window.drawnItems.addLayer(layer);
-            var coords = null;
-            if (layer.getLatLngs) {{
-                var latlngs = layer.getLatLngs();
-                if (Array.isArray(latlngs) && latlngs.length > 0) {{
-                    coords = [latlngs[0].map(function(pt) {{ return {{lat: pt.lat, lng: pt.lng}}; }})];
-                }}
-            }} else if (layer.getLatLng) {{
-                var latlng = layer.getLatLng();
-                coords = [[{{lat: latlng.lat, lng: latlng.lng}}]];
-            }}
-            if (coords) {{
-                window.nicegui.send_event('polygon_drawn', {{coords: coords}});
+            if (window.drawnItems) {{
+                window.drawnItems.clearLayers();
             }} else {{
-                window.nicegui.notify('Не удалось получить координаты объекта', 'negative');
+                window.drawnItems = new L.FeatureGroup();
+                map.addLayer(window.drawnItems);
             }}
-        }};
-        map.on(L.Draw.Event.CREATED, window._drawCreatedHandler);
-    }}, {{ once: true }});
-    """)
+            window._drawControl = new L.Control.Draw({{
+                edit: {{
+                    featureGroup: window.drawnItems
+                }},
+                draw: {{
+                    polygon: true,
+                    marker: false,
+                    circle: false,
+                    rectangle: false,
+                    polyline: false,
+                    circlemarker: false
+                }}
+            }});
+            map.addControl(window._drawControl);
+            if (window._drawCreatedHandler) {{
+                map.off(L.Draw.Event.CREATED, window._drawCreatedHandler);
+            }}
+            window._drawCreatedHandler = function (e) {{
+                var layer = e.layer;
+                window.drawnItems.addLayer(layer);
+                var coords = null;
+                if (layer.getLatLngs) {{
+                    var latlngs = layer.getLatLngs();
+                    if (Array.isArray(latlngs) && latlngs.length > 0) {{
+                        coords = [latlngs[0].map(function(pt) {{ return {{lat: pt.lat, lng: pt.lng}}; }})];
+                    }}
+                }}
+                if (coords) {{
+                    window.nicegui.send_event('polygon_drawn', {{coords: coords}});
+                }} else {{
+                    window.nicegui.notify('Не удалось получить координаты объекта', 'negative');
+                }}
+            }};
+            map.on(L.Draw.Event.CREATED, window._drawCreatedHandler);
+            // Автоматически активируем инструмент рисования полигона
+            setTimeout(function() {{
+                new L.Draw.Polygon(map, window._drawControl.options.draw.polygon).enable();
+            }}, 300);
+        }}, {{ once: true }});
+        """)
 
     def show_save_dialog(coords):
         dialog = ui.dialog()
@@ -147,22 +149,31 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             return
         coords = json.loads(field.coordinates)
         latlngs = coords[0]
+        # Центр полигона
+        lat = sum(p['lat'] for p in latlngs) / len(latlngs)
+        lng = sum(p['lng'] for p in latlngs) / len(latlngs)
+        map_view.set_center((lat, lng))
+        # Добавляем полигон на карту и включаем режим редактирования
+        poly_id = f'edit_poly_{field_id}'
         js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
         ui.run_javascript(f'''
             window.mapInstances = window.mapInstances || {{}};
             document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
                 const map = window.mapInstances['{map_view.id}'];
                 if (map) {{
-                    let poly = L.polygon({js_coords}, {{color: 'orange', weight: 3}}).addTo(map);
+                    let poly = L.polygon({js_coords}, {{color: 'orange', weight: 3, id: '{poly_id}'}}).addTo(map);
                     map.fitBounds(poly.getBounds());
+                    // Включаем режим редактирования
                     if (map.editTools) {{
                         poly.enableEdit();
                     }}
+                    // Сохраняем ссылку на полигон
                     window._editPoly = poly;
                 }}
             }}, {{ once: true }});
         ''')
         def save_edited():
+            # Получаем новые координаты из JS
             ui.run_javascript(f'''
                 (function() {{
                     const poly = window._editPoly;
@@ -174,7 +185,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     window.nicegui.send_event('save_edited_poly', {{latlngs: latlngs}});
                 }})();
             ''')
-        @ui.event('save_edited_poly')
         def on_save_edited_poly(e):
             new_coords = [e.args['latlngs']]
             session = Session()
@@ -188,4 +198,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             else:
                 ui.notify('Ошибка при обновлении поля', color='negative')
             session.close()
+        ui.on('save_edited_poly', on_save_edited_poly)
+        ui.button('Сохранить изменения', on_click=save_edited).classes('mt-4')
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4') 
