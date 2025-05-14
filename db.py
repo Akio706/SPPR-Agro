@@ -110,7 +110,9 @@ def initialize_db():
         session = Session()
         test_username = 'Timka'
         test_email = 'testadmin@example.com'
-        test_user = session.query(User).filter(User.username == test_username).first()
+        test_user = session.query(User).filter(
+            (User.username == test_username) | (User.email == test_email)
+        ).first()
         if not test_user:
             user_id = str(uuid.uuid4())
             user = User(
