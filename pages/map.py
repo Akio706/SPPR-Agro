@@ -16,12 +16,10 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             (function() {{
                 var map = window.mapInstances['{map_view.id}'];
                 if (!map) return;
-                // Удаляем старый drawControl, если он был
                 if (window._drawControl) {{
                     map.removeControl(window._drawControl);
                     window._drawControl = null;
                 }}
-                // Очищаем старые нарисованные объекты
                 if (window.drawnItems) {{
                     window.drawnItems.clearLayers();
                 }} else {{
@@ -34,31 +32,43 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     }},
                     draw: {{
                         polygon: true,
-                        marker: false,
-                        circle: false,
-                        rectangle: false,
-                        polyline: false,
-                        circlemarker: false
+                        marker: true,
+                        circle: true,
+                        rectangle: true,
+                        polyline: true,
+                        circlemarker: true
                     }}
                 }});
                 map.addControl(window._drawControl);
-                // Удаляем старый обработчик, если был
                 if (window._drawCreatedHandler) {{
                     map.off(L.Draw.Event.CREATED, window._drawCreatedHandler);
                 }}
                 window._drawCreatedHandler = function (e) {{
                     var layer = e.layer;
                     window.drawnItems.addLayer(layer);
-                    var coords = layer.getLatLngs();
-                    // Преобразуем координаты к формату [[{'lat':..., 'lng':...}, ...]]
-                    var result = [coords[0].map(function(pt) {{ return {{lat: pt.lat, lng: pt.lng}}; }})];
-                    window.nicegui.send_event('polygon_drawn', {{coords: result}});
+                    var coords = null;
+                    if (layer.getLatLngs) {{
+                        var latlngs = layer.getLatLngs();
+                        // Для полигонов и линий
+                        if (Array.isArray(latlngs) && latlngs.length > 0) {{
+                            coords = [latlngs[0].map(function(pt) {{ return {{lat: pt.lat, lng: pt.lng}}; }})];
+                        }}
+                    }} else if (layer.getLatLng) {{
+                        // Для маркеров и окружностей
+                        var latlng = layer.getLatLng();
+                        coords = [[{{lat: latlng.lat, lng: latlng.lng}}]];
+                    }}
+                    if (coords) {{
+                        window.nicegui.send_event('polygon_drawn', {{coords: coords}});
+                    }} else {{
+                        window.nicegui.notify('Не удалось получить координаты объекта', 'negative');
+                    }}
                 }};
                 map.on(L.Draw.Event.CREATED, window._drawCreatedHandler);
             }})();
         """)
 
-    ui.button('Нарисовать поле', on_click=start_draw).props('color=primary').classes('mb-4')
+    ui.button('Режим рисования', on_click=start_draw).props('color=primary').classes('mb-4')
 
     # Показываем все существующие поля пользователя как полигоны
     session = Session()
