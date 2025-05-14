@@ -1,110 +1,71 @@
-from nicegui import ui
+from nicegui import events, ui
 from db import Session, Field
 import json
 from datetime import datetime
 
-# Add Leaflet.Draw CSS and JavaScript to the page
-ui.add_head_html("""
-<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
-<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
-""")
+# Handle the drawing of a polygon and save it to the database
+def handle_draw(e: events.GenericEventArguments):
+    options = {'color': 'red', 'weight': 1}
+    m.generic_layer(name='polygon', args=[e.args['layer']['_latlngs'], options])
 
-def map_page(action: str = None, fields: str = None, field_id: str = None):
-    if not getattr(ui.page, 'user_id', None):
-        ui.run_javascript("window.location.href = '/';")
-        return
+    # Extract coordinates from the drawn layer
+    coords = e.args['layer']['_latlngs']
 
-    # Create the map
-    map_view = ui.leaflet(center=(55.75, 37.62), zoom=6).style('height: 500px; width: 100%;')
+    # Show a dialog to save the drawn polygon
+    dialog = ui.dialog()
+    with dialog, ui.card():
+        ui.label('Сохранить новое поле').classes('text-h6 q-mb-md')
+        name_input = ui.input(label='Название').classes('w-full q-mb-sm')
+        group_input = ui.input(label='Группа').classes('w-full q-mb-sm')
+        notes_input = ui.input(label='Заметки').classes('w-full q-mb-md')
 
-    # Enable polygon creation
-    if action == 'create':
-        ui.run_javascript(f"""
-        document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
-            const map = window.mapInstances['{map_view.id}'];
-            if (!map) {{
-                console.error('Map instance not found!');
-                return;
-            }}
+        def save():
+            if not name_input.value:
+                ui.notify('Введите название', type='warning')
+                return
 
-            // Initialize the drawn items layer
-            if (!window.drawnItems) {{
-                window.drawnItems = new L.FeatureGroup();
-                map.addLayer(window.drawnItems);
-            }}
+            session = Session()
+            try:
+                field = Field(
+                    user_id=1,  # Replace with dynamic user ID if applicable
+                    name=name_input.value,
+                    coordinates=json.dumps(coords),
+                    group=group_input.value,
+                    notes=notes_input.value,
+                    created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                )
+                session.add(field)
+                session.commit()
+                ui.notify('Поле успешно создано', color='positive')
+                dialog.close()
+            except Exception as ex:
+                ui.notify(f'Произошла ошибка: {str(ex)}', type='negative')
+                session.rollback()
+            finally:
+                session.close()
 
-            // Add drawing controls
-            const drawControl = new L.Control.Draw({{
-                edit: {{ featureGroup: window.drawnItems }},
-                draw: {{
-                    polygon: true,
-                    marker: false,
-                    circle: false,
-                    rectangle: false,
-                    polyline: false,
-                    circlemarker: false
-                }}
-            }});
-            map.addControl(drawControl);
+        ui.button('Сохранить', on_click=save).classes('q-mt-md')
 
-            // Handle the creation of a new polygon
-            map.on(L.Draw.Event.CREATED, function (e) {{
-                const layer = e.layer;
-                window.drawnItems.addLayer(layer);
+    dialog.open()
 
-                // Extract coordinates
-                const latlngs = layer.getLatLngs()[0].map(pt => {{ return {{ lat: pt.lat, lng: pt.lng }}; }});
-                console.log('Polygon drawn with coordinates:', latlngs);
+# Map configuration
+draw_control = {
+    'draw': {
+        'polygon': True,
+        'marker': False,
+        'circle': False,
+        'rectangle': False,
+        'polyline': False,
+        'circlemarker': False,
+    },
+    'edit': {
+        'edit': False,
+        'remove': False,
+    },
+}
 
-                // Send the coordinates to NiceGUI
-                window.nicegui.send_event('polygon_drawn', {{ coords: [latlngs] }});
-            }});
-        }});
-        """)
+# Create the map
+m = ui.leaflet(center=(51.5, 0), draw_control=draw_control, hide_drawn_items=True)
+m.on('draw:created', handle_draw)
 
-    # Dialog box to save the drawn polygon
-    def show_save_dialog(coords):
-        dialog = ui.dialog()
-        with dialog, ui.card():
-            ui.label('Сохранить новое поле').classes('text-h6 q-mb-md')
-            name_input = ui.input(label='Название').classes('w-full q-mb-sm')
-            group_input = ui.input(label='Группа').classes('w-full q-mb-sm')
-            notes_input = ui.input(label='Заметки').classes('w-full q-mb-md')
-
-            def save():
-                if not name_input.value:
-                    ui.notify('Введите название', type='warning')
-                    return
-
-                session = Session()
-                try:
-                    field = Field(
-                        user_id=ui.page.user_id,
-                        name=name_input.value,
-                        coordinates=json.dumps(coords),
-                        group=group_input.value,
-                        notes=notes_input.value,
-                        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    )
-                    session.add(field)
-                    session.commit()
-                    ui.notify('Поле успешно создано', color='positive')
-                    dialog.close()
-                    ui.run_javascript("window.location.href = '/fields';")
-                except Exception as e:
-                    ui.notify(f'Произошла ошибка: {str(e)}', type='negative')
-                    session.rollback()
-                finally:
-                    session.close()
-
-            ui.button('Сохранить', on_click=save).classes('q-mt-md')
-
-        dialog.open()
-
-    # Handle the polygon_drawn event
-    def handle_polygon_drawn(event):
-        coords = event['coords'][0]  # Extract the coordinates
-        show_save_dialog(coords)
-
-    # Register the NiceGUI event handler
-    ui.on('polygon_drawn', handle_polygon_drawn)
+ui.run()
