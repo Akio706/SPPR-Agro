@@ -3,7 +3,12 @@ from db import Session, Field
 import json
 from datetime import datetime
 
-@ui.page('/map')
+# Подключаем только Leaflet Draw (CSS и JS)
+ui.add_head_html("""
+<link rel="stylesheet" href="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.css"/>
+<script src="https://unpkg.com/leaflet-draw@1.0.4/dist/leaflet.draw.js"></script>
+""")
+
 def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
