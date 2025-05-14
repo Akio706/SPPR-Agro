@@ -29,7 +29,7 @@ def main_page():
             ui.notify(message, type='negative')
 
     with ui.column().classes('items-center justify-center min-h-screen bg-grey-2'):
-        with ui.card().classes('w-96 shadow-lg'):
+        with ui.card().classes('w-full max-w-md shadow-lg p-8'):
             ui.label('Вход в систему').classes('text-h4 q-mb-md text-center')
             with ui.tabs().classes('w-full') as tabs:
                 ui.tab('Вход')
@@ -38,12 +38,12 @@ def main_page():
                 with ui.tab_panel('Вход'):
                     login_username = ui.input(label='Имя пользователя').classes('w-full q-mb-md')
                     login_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
-                    ui.button('Войти', on_click=lambda: login(login_username.value, login_password.value)).classes('w-full bg-primary text-white')
+                    ui.button('Войти', on_click=lambda: login(login_username.value, login_password.value)).classes('w-full bg-primary text-white q-mt-md')
                 with ui.tab_panel('Регистрация'):
                     reg_username = ui.input(label='Имя пользователя').classes('w-full q-mb-md')
                     reg_email = ui.input(label='Email').classes('w-full q-mb-md')
                     reg_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
-                    ui.button('Зарегистрироваться', on_click=lambda: register(reg_username.value, reg_password.value, reg_email.value)).classes('w-full bg-secondary text-white')
+                    ui.button('Зарегистрироваться', on_click=lambda: register(reg_username.value, reg_password.value, reg_email.value)).classes('w-full bg-secondary text-white q-mt-md')
 
     if getattr(ui.page, 'user_id', None):
         def logout():
