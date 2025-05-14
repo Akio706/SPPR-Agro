@@ -7,21 +7,9 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
-    # Карта с инструментом рисования полигона
-    map_view = ui.leaflet(center=(51.505, -0.09), zoom=9, draw_control={
-        'draw': {
-            'polygon': True,
-            'marker': False,
-            'circle': False,
-            'rectangle': False,
-            'polyline': False,
-            'circlemarker': False,
-        },
-        'edit': {
-            'edit': True,
-            'remove': True,
-        },
-    }).classes('h-96 w-full')
+    # Карта без инструмента рисования (draw_control временно отключён из-за ошибки featureGroup)
+    map_view = ui.leaflet(center=(51.505, -0.09), zoom=9).style('height: 400px; width: 100%;')
+    # TODO: Вернуть draw_control, когда появится поддержка featureGroup в NiceGUI или будет найден обход
 
     # Показываем все существующие поля пользователя как полигоны
     session = Session()
