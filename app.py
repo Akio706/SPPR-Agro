@@ -671,19 +671,57 @@ def main_page():
                 reg_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
                 ui.button('Зарегистрироваться', on_click=lambda: register(reg_username.value, reg_password.value, reg_email.value)).classes('w-full')
 
+    # Кнопка выхода для всех страниц, где пользователь залогинен
+    if getattr(ui.page, 'user_id', None):
+        def logout():
+            ui.page.user_id = None
+            ui.page.user_role = None
+            ui.notify('Вы вышли из аккаунта', type='positive')
+            ui.open('/')
+        ui.button('Выйти', on_click=logout).classes('absolute top-4 right-4 z-50')
+
 
 @ui.page('/map')
 def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
-    map_view = ui.leaflet(center=(51.505, -0.09), zoom=9, draw_control=True).classes('h-96 w-full')
+    # Только рисование и редактирование полигонов
+    map_view = ui.leaflet(center=(51.505, -0.09), zoom=9, draw_control={
+        'draw': {
+            'polygon': True,
+            'marker': False,
+            'circle': False,
+            'rectangle': False,
+            'polyline': False,
+            'circlemarker': False,
+        },
+        'edit': {
+            'edit': True,
+            'remove': True,
+        },
+    }).classes('h-96 w-full')
+
+    # Показываем все существующие поля пользователя как полигоны
+    session = Session()
+    user_fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
+    session.close()
+    for field in user_fields:
+        coords = json.loads(field.coordinates)
+        latlngs = coords[0]
+        js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
+        ui.run_javascript(f'''
+            window.mapInstances = window.mapInstances || {{}};
+            document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
+                const map = window.mapInstances['{map_view.id}'];
+                if (map) {{
+                    L.polygon({js_coords}, {{color: 'blue', weight: 2}}).addTo(map);
+                }}
+            }}, {{ once: true }});
+        ''')
 
     if action == 'create':
         def handle_field_creation(e: events.GenericEventArguments):
-            print('handle_field_creation вызван!')
-            ui.notify('Событие draw:created сработало!', type='info')
-            print('draw:created event:', e.args)
             coords = None
             if '_latlngs' in e.args['layer']:
                 coords = e.args['layer']['_latlngs']
@@ -692,14 +730,11 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             else:
                 ui.notify('Не удалось получить координаты объекта', color='negative')
                 return
-            print('Перед вызовом show_save_dialog')
             show_save_dialog(coords)
-
         def show_save_dialog(coords):
-            print('show_save_dialog вызван!')
             dialog = ui.dialog()
             with dialog, ui.card():
-                ui.label('Сохранить новый объект').classes('text-h6 q-mb-md')
+                ui.label('Сохранить новое поле').classes('text-h6 q-mb-md')
                 name_input = ui.input(label='Название').classes('w-full q-mb-sm')
                 group_input = ui.input(label='Группа').classes('w-full q-mb-sm')
                 notes_input = ui.textarea(label='Заметки').classes('w-full q-mb-md')
@@ -709,31 +744,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                         return
                     session = Session()
                     try:
-                        # 1. Сохраняем сам полигон (Polygon)
-                        polygon = Polygon(
-                            user_id=ui.page.user_id,
-                            coords=json.dumps(coords)
-                        )
-                        session.add(polygon)
-                        session.flush()  # Получаем polygon.id
-
-                        # 2. Проверяем структуру coords
-                        if not (isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list)):
-                            raise ValueError(f"Некорректная структура координат: {coords}")
-
-                        # 3. Сохраняем точки полигона (PolygonPoint)
-                        for point in coords[0]:
-                            if not all(k in point for k in ('lat', 'lng')):
-                                raise ValueError(f"Некорректная точка: {point}")
-                            point_obj = PolygonPoint(
-                                user_id=ui.page.user_id,
-                                lat=point['lat'],
-                                lng=point['lng'],
-                                polygon_id=polygon.id
-                            )
-                            session.add(point_obj)
-
-                        # 4. Создаём запись в таблице Field
                         field = Field(
                             user_id=ui.page.user_id,
                             name=name_input.value,
@@ -743,15 +753,13 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                             created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                         )
                         session.add(field)
-
                         session.commit()
-                        ui.notify('Объект успешно создан', color='positive')
+                        ui.notify('Поле успешно создано', color='positive')
                         dialog.close()
                         ui.open('/fields')
                     except Exception as e:
                         session.rollback()
-                        print(f"Ошибка при создании объекта: {e}")
-                        ui.notify(f'Ошибка при создании объекта: {e}', color='negative')
+                        ui.notify(f'Ошибка при создании поля: {e}', color='negative')
                     finally:
                         session.close()
                 with ui.row().classes('w-full justify-end'):
@@ -759,24 +767,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     ui.button('Сохранить', on_click=save).props('color=positive')
             dialog.open()
         map_view.on('draw:created', handle_field_creation)
-    elif action == 'select' and fields:
-        field_ids = [int(fid) for fid in fields.split(',') if fid.isdigit()]
-        if field_ids:
-            # Получаем координаты первого полигона для центрирования
-            session = Session()
-            field = session.query(Field).filter(Field.id == field_ids[0], Field.user_id == ui.page.user_id).first()
-            session.close()
-            if field:
-                coords = json.loads(field.coordinates)
-                # coords[0] — список точек полигона
-                if coords and coords[0]:
-                    latlngs = coords[0]
-                    # Центр полигона (среднее по всем точкам)
-                    lat = sum(p['lat'] for p in latlngs) / len(latlngs)
-                    lng = sum(p['lng'] for p in latlngs) / len(latlngs)
-                    map_view.set_center((lat, lng))
-            for field_id in field_ids:
-                highlight_polygon(field_id, ui.page.user_id, map_view.id)
     elif action == 'edit' and fields:
         try:
             field_id = int(fields)
@@ -791,31 +781,22 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             return
         coords = json.loads(field.coordinates)
         latlngs = coords[0]
-        # Центр полигона
-        lat = sum(p['lat'] for p in latlngs) / len(latlngs)
-        lng = sum(p['lng'] for p in latlngs) / len(latlngs)
-        map_view.set_center((lat, lng))
-        # Добавляем полигон на карту и включаем режим редактирования
-        poly_id = f'edit_poly_{field_id}'
         js_coords = json.dumps([[p['lat'], p['lng']] for p in latlngs])
         ui.run_javascript(f'''
             window.mapInstances = window.mapInstances || {{}};
             document.addEventListener('leaflet_map_ready_{map_view.id}', function() {{
                 const map = window.mapInstances['{map_view.id}'];
                 if (map) {{
-                    let poly = L.polygon({js_coords}, {{color: 'orange', weight: 3, id: '{poly_id}'}}).addTo(map);
+                    let poly = L.polygon({js_coords}, {{color: 'orange', weight: 3}}).addTo(map);
                     map.fitBounds(poly.getBounds());
-                    // Включаем режим редактирования
                     if (map.editTools) {{
                         poly.enableEdit();
                     }}
-                    // Сохраняем ссылку на полигон
                     window._editPoly = poly;
                 }}
             }}, {{ once: true }});
         ''')
         def save_edited():
-            # Получаем новые координаты из JS
             ui.run_javascript(f'''
                 (function() {{
                     const poly = window._editPoly;
@@ -842,7 +823,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 ui.notify('Ошибка при обновлении поля', color='negative')
             session.close()
         ui.button('Сохранить изменения', on_click=save_edited).classes('mt-4')
-
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
 
 
