@@ -97,7 +97,7 @@ map.on(L.Draw.Event.CREATED, function (event) {
 </script>
 """)
 
-ui.on_event('polygon_drawn', on_polygon_drawn)
+ui.page.on('polygon_drawn', on_polygon_drawn)
 
 ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
 
