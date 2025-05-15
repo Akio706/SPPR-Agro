@@ -15,7 +15,13 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         session.close()
         if field_obj:
             coords = json.loads(field_obj.coordinates)
-            polygon_coords = coords[0] if isinstance(coords, list) and coords else coords
+            # Leaflet ожидает [{lat, lng}, ...] для generic_layer
+            if isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], dict):
+                polygon_coords = coords
+            elif isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list):
+                polygon_coords = coords[0]
+            else:
+                polygon_coords = coords
 
     def handle_draw(e: events.GenericEventArguments):
         coords = e.args['layer'].get('_latlngs') or e.args['layer'].get('_latlng')
@@ -99,10 +105,14 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     if action == 'edit':
         map_view.on('draw:edited', handle_edit)
 
-    # После инициализации карты — добавляем полигон для select/edit
+    # После инициализации карты — добавляем полигон для select/edit и центрируем карту
     if polygon_coords:
         def on_map_ready(e):
             map_view.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
+            if polygon_coords and len(polygon_coords) > 0:
+                lat = sum(p['lat'] for p in polygon_coords) / len(polygon_coords)
+                lng = sum(p['lng'] for p in polygon_coords) / len(polygon_coords)
+                map_view.set_center((lat, lng))
         map_view.on('map:ready', on_map_ready)
 
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
