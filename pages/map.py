@@ -91,8 +91,10 @@ def map_page(action=None, fields=None, field_id=None):
     if action == 'edit':
         m.on('draw:edited', handle_edit)
 
-    # Если нужно показать или редактировать — отрисовываем полигон
+    # После инициализации карты — добавляем полигон
     if polygon_coords:
-        m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
+        @m.on('map:ready')
+        def _(e):
+            m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
 
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
