@@ -8,10 +8,10 @@ def map_page(action=None, fields=None, field_id=None):
         return ui.open('/')
 
     ui.add_head_html("""
-    <link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.css\"/>
-    <link rel=\"stylesheet\" href=\"https://unpkg.com/leaflet-draw@1.0.7/dist/leaflet.draw.css\"/>
-    <script src=\"https://unpkg.com/leaflet@1.9.4/dist/leaflet.js\"></script>
-    <script src=\"https://unpkg.com/leaflet-draw@1.0.7/dist/leaflet.draw.js\"></script>
+    <link rel=\"stylesheet\" href=\"/static/leaflet.css\"/>
+    <link rel=\"stylesheet\" href=\"/static/leaflet.draw.css\"/>
+    <script src=\"/static/leaflet.js\"></script>
+    <script src=\"/static/leaflet.draw.js\"></script>
     """)
 
     def show_save_dialog(coords, edit_field=None):
