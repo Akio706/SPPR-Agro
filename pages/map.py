@@ -75,42 +75,40 @@ def map_page(action=None, fields=None, field_id=None):
 
     ui.html('<div id="map" style="height: 500px;"></div>')
 
-    # JS для отображения и взаимодействия с картой
     js_code = """
-    <script>
-    window.sendPolygonToPython = function(coords) {
-        const arr = coords[0].map(pt => ({lat: pt.lat, lng: pt.lng}));
-        window.dispatchEvent(new CustomEvent('polygon_drawn', {detail: {coords: [arr]}}));
-    }
-    let map = L.map('map').setView([55.75, 37.62], 13);
-    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        maxZoom: 19,
-    }).addTo(map);
-    let drawnItems = new L.FeatureGroup();
-    map.addLayer(drawnItems);
-    let drawControl = new L.Control.Draw({
-        draw: {
-            polygon: true,
-            marker: false,
-            circle: false,
-            rectangle: false,
-            polyline: false,
-            circlemarker: false,
-        },
-        edit: {
-            edit: false,
-            remove: false,
+    window.addEventListener('DOMContentLoaded', function() {
+        window.sendPolygonToPython = function(coords) {
+            const arr = coords[0].map(pt => ({lat: pt.lat, lng: pt.lng}));
+            window.dispatchEvent(new CustomEvent('polygon_drawn', {detail: {coords: [arr]}}));
         }
-    });
-    map.addControl(drawControl);
-    map.on(L.Draw.Event.CREATED, function (event) {
-        let layer = event.layer;
-        drawnItems.addLayer(layer);
-        let coords = layer.getLatLngs();
-        window.sendPolygonToPython(coords);
-    });
+        let map = L.map('map').setView([55.75, 37.62], 13);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            maxZoom: 19,
+        }).addTo(map);
+        let drawnItems = new L.FeatureGroup();
+        map.addLayer(drawnItems);
+        let drawControl = new L.Control.Draw({
+            draw: {
+                polygon: true,
+                marker: false,
+                circle: false,
+                rectangle: false,
+                polyline: false,
+                circlemarker: false,
+            },
+            edit: {
+                edit: false,
+                remove: false,
+            }
+        });
+        map.addControl(drawControl);
+        map.on(L.Draw.Event.CREATED, function (event) {
+            let layer = event.layer;
+            drawnItems.addLayer(layer);
+            let coords = layer.getLatLngs();
+            window.sendPolygonToPython(coords);
+        });
     """
-    # Если режим select или edit, отрисовать существующий полигон
     if (action in ['select', 'edit']) and fields:
         session = Session()
         field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
@@ -118,11 +116,11 @@ def map_page(action=None, fields=None, field_id=None):
         if field:
             try:
                 coords = json.loads(field.coordinates)
-                js_code += f"\nlet polygon = L.polygon({json.dumps(coords[0])}, {{color: 'red'}}).addTo(map);\nmap.fitBounds(polygon.getBounds());"
+                js_code += f"\n    let polygon = L.polygon({json.dumps(coords[0])}, {{color: 'red'}}).addTo(map);\n    map.fitBounds(polygon.getBounds());"
             except Exception:
                 pass
-    js_code += "</script>"
-    ui.add_body_html(js_code)
+    js_code += "\n});"
+    ui.run_javascript(js_code)
 
     ui.on('polygon_drawn', on_polygon_drawn)
 
