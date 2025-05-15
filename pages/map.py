@@ -103,7 +103,16 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     )
                     session.add(polygon)
                     session.flush()
-                    for lat, lng in coords_arr:
+                    if (isinstance(coords_arr, list) and len(coords_arr) > 0 and
+                        isinstance(coords_arr[0], list) and len(coords_arr[0]) == 2 and
+                        isinstance(coords_arr[0][0], (int, float))):
+                        points = coords_arr
+                    elif (isinstance(coords_arr, list) and len(coords_arr) > 0 and
+                          isinstance(coords_arr[0], list)):
+                        points = coords_arr[0]
+                    else:
+                        points = coords_arr
+                    for lat, lng in points:
                         point_obj = PolygonPoint(
                             user_id=ui.page.user_id,
                             lat=lat,
