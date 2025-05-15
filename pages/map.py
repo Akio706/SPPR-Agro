@@ -3,6 +3,7 @@ from db import Session, Field, Polygon, PolygonPoint
 import json
 from datetime import datetime
 import os
+from utils import geojson_from_coords, coords_from_geojson
 
 def export_all_fields_to_geojson(user_id, filename="polygons.geojson"):
     session = Session()
@@ -11,17 +12,9 @@ def export_all_fields_to_geojson(user_id, filename="polygons.geojson"):
     features = []
     for field in fields:
         coords = json.loads(field.coordinates)
-        geojson_coords = [[lng, lat] for lat, lng in coords]
-        if geojson_coords and geojson_coords[0] != geojson_coords[-1]:
-            geojson_coords.append(geojson_coords[0])
-        features.append({
-            "type": "Feature",
-            "properties": {"id": field.id, "name": field.name},
-            "geometry": {
-                "type": "Polygon",
-                "coordinates": [geojson_coords]
-            }
-        })
+        geojson = geojson_from_coords(coords, field.name)
+        geojson["properties"]["id"] = field.id
+        features.append(geojson)
     geojson = {
         "type": "FeatureCollection",
         "features": features
@@ -35,9 +28,8 @@ def get_polygon_coords_from_geojson(field_id, filename="polygons.geojson"):
     with open(filename, "r", encoding="utf-8") as f:
         geojson = json.load(f)
     for feature in geojson["features"]:
-        if feature["properties"]["id"] == field_id:
-            coords = feature["geometry"]["coordinates"][0]
-            return [[lat, lng] for lng, lat in coords]
+        if feature["properties"].get("id") == field_id:
+            return coords_from_geojson(feature)
     return None
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
@@ -53,6 +45,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         if not coords:
             ui.notify('Не удалось получить координаты объекта', color='negative')
             return
+        # Leaflet всегда отдаёт [[lat, lng], ...]
         if isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], dict):
             coords_arr = [[p['lat'], p['lng']] for p in coords]
         elif isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list):
@@ -97,42 +90,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     return
                 session = Session()
                 try:
-                    polygon = Polygon(
-                        user_id=ui.page.user_id,
-                        coords=json.dumps(coords_arr)
-                    )
-                    session.add(polygon)
-                    session.flush()
-                    if (isinstance(coords_arr, list) and len(coords_arr) > 0 and
-                        isinstance(coords_arr[0], list) and len(coords_arr[0]) == 2 and
-                        isinstance(coords_arr[0][0], (int, float))):
-                        points = coords_arr
-                    elif (isinstance(coords_arr, list) and len(coords_arr) > 0 and
-                          isinstance(coords_arr[0], list)):
-                        points = coords_arr[0]
-                    else:
-                        points = coords_arr
-                    print('DEBUG: points for PolygonPoint:', points)
-                    for item in points:
-                        # item должен быть списком из двух чисел
-                        if (isinstance(item, list) and len(item) == 2 and
-                            all(isinstance(x, (int, float)) for x in item)):
-                            lat, lng = item
-                        # если вдруг item — словарь с ключами lat/lng и оба значения числа
-                        elif (isinstance(item, dict) and
-                              'lat' in item and 'lng' in item and
-                              isinstance(item['lat'], (int, float)) and isinstance(item['lng'], (int, float))):
-                            lat, lng = item['lat'], item['lng']
-                        else:
-                            print('SKIP BAD POINT:', item)
-                            continue  # пропускаем некорректные элементы
-                        point_obj = PolygonPoint(
-                            user_id=ui.page.user_id,
-                            lat=lat,
-                            lng=lng,
-                            polygon_id=polygon.id
-                        )
-                        session.add(point_obj)
                     field = Field(
                         user_id=ui.page.user_id,
                         name=name_input.value,

@@ -71,4 +71,21 @@ def export_all_fields_to_csv(user_id, filename):
         return filename
     except Exception as e:
         print(f'Ошибка при экспорте в CSV: {e}')
-        return None 
+        return None
+
+def geojson_from_coords(coords, name="Поле"):
+    # coords: [[lat, lng], ...]
+    return {
+        "type": "Feature",
+        "properties": {"name": name},
+        "geometry": {
+            "type": "Polygon",
+            "coordinates": [[ [lng, lat] for lat, lng in coords ]]
+        }
+    }
+
+def coords_from_geojson(geojson):
+    # geojson: Feature
+    # возвращает [[lat, lng], ...]
+    coords = geojson["geometry"]["coordinates"][0]
+    return [[lat, lng] for lng, lat in coords] 
