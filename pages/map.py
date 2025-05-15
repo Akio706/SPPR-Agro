@@ -2,51 +2,89 @@ from nicegui import ui, events
 from db import Session, Field, Polygon, PolygonPoint
 import json
 from datetime import datetime
+import os
+
+def export_all_fields_to_geojson(user_id, filename="polygons.geojson"):
+    session = Session()
+    fields = session.query(Field).filter(Field.user_id == user_id).all()
+    session.close()
+    features = []
+    for field in fields:
+        coords = json.loads(field.coordinates)
+        geojson_coords = [[lng, lat] for lat, lng in coords]
+        if geojson_coords and geojson_coords[0] != geojson_coords[-1]:
+            geojson_coords.append(geojson_coords[0])
+        features.append({
+            "type": "Feature",
+            "properties": {"id": field.id, "name": field.name},
+            "geometry": {
+                "type": "Polygon",
+                "coordinates": [geojson_coords]
+            }
+        })
+    geojson = {
+        "type": "FeatureCollection",
+        "features": features
+    }
+    with open(filename, "w", encoding="utf-8") as f:
+        json.dump(geojson, f, ensure_ascii=False, indent=2)
+
+def get_polygon_coords_from_geojson(field_id, filename="polygons.geojson"):
+    if not os.path.exists(filename):
+        return None
+    with open(filename, "r", encoding="utf-8") as f:
+        geojson = json.load(f)
+    for feature in geojson["features"]:
+        if feature["properties"]["id"] == field_id:
+            coords = feature["geometry"]["coordinates"][0]
+            return [[lat, lng] for lng, lat in coords]
+    return None
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
     polygon_coords = None
-    field_obj = None
     if (action in ['edit', 'select']) and fields:
-        session = Session()
-        field_obj = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
-        session.close()
-        if field_obj:
-            coords = json.loads(field_obj.coordinates)
-            # Leaflet ожидает [{lat, lng}, ...] для generic_layer
-            if isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], dict):
-                polygon_coords = coords
-            elif isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list):
-                polygon_coords = coords[0]
-            else:
-                polygon_coords = coords
+        polygon_coords = get_polygon_coords_from_geojson(int(fields))
 
     def handle_draw(e: events.GenericEventArguments):
         coords = e.args['layer'].get('_latlngs') or e.args['layer'].get('_latlng')
         if not coords:
             ui.notify('Не удалось получить координаты объекта', color='negative')
             return
-        show_save_dialog(coords)
+        if isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], dict):
+            coords_arr = [[p['lat'], p['lng']] for p in coords]
+        elif isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list):
+            coords_arr = coords
+        else:
+            coords_arr = coords
+        show_save_dialog(coords_arr)
 
     def handle_edit(e: events.GenericEventArguments):
         coords = e.args['layer'].get('_latlngs') or e.args['layer'].get('_latlng')
         if not coords:
             ui.notify('Не удалось получить новые координаты', color='negative')
             return
+        if isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], dict):
+            coords_arr = [[p['lat'], p['lng']] for p in coords]
+        elif isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list):
+            coords_arr = coords
+        else:
+            coords_arr = coords
         session = Session()
         field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
         if field:
-            field.coordinates = json.dumps(coords)
+            field.coordinates = json.dumps(coords_arr)
             field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             session.commit()
             ui.notify('Полигон успешно обновлён', color='positive')
+            export_all_fields_to_geojson(ui.page.user_id)
         else:
             ui.notify('Поле не найдено', color='negative')
         session.close()
 
-    def show_save_dialog(coords):
+    def show_save_dialog(coords_arr):
         dialog = ui.dialog()
         with dialog, ui.card():
             ui.label('Сохранить новый полигон').classes('text-h6 q-mb-md')
@@ -61,26 +99,22 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 try:
                     polygon = Polygon(
                         user_id=ui.page.user_id,
-                        coords=json.dumps(coords)
+                        coords=json.dumps(coords_arr)
                     )
                     session.add(polygon)
                     session.flush()
-                    if not (isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list)):
-                        raise ValueError(f"Некорректная структура координат: {coords}")
-                    for point in coords[0]:
-                        if not all(k in point for k in ('lat', 'lng')):
-                            raise ValueError(f"Некорректная точка: {point}")
+                    for lat, lng in coords_arr:
                         point_obj = PolygonPoint(
                             user_id=ui.page.user_id,
-                            lat=point['lat'],
-                            lng=point['lng'],
+                            lat=lat,
+                            lng=lng,
                             polygon_id=polygon.id
                         )
                         session.add(point_obj)
                     field = Field(
                         user_id=ui.page.user_id,
                         name=name_input.value,
-                        coordinates=json.dumps(coords),
+                        coordinates=json.dumps(coords_arr),
                         group=group_input.value,
                         notes=notes_input.value,
                         created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -89,6 +123,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     session.commit()
                     ui.notify('Полигон успешно создан', color='positive')
                     dialog.close()
+                    export_all_fields_to_geojson(ui.page.user_id)
                     ui.open('/fields')
                 except Exception as e:
                     session.rollback()
@@ -105,13 +140,12 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     if action == 'edit':
         map_view.on('draw:edited', handle_edit)
 
-    # После инициализации карты — добавляем полигон для select/edit и центрируем карту
     if polygon_coords:
         def on_map_ready(e):
             map_view.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
             if polygon_coords and len(polygon_coords) > 0:
-                lat = sum(p['lat'] for p in polygon_coords) / len(polygon_coords)
-                lng = sum(p['lng'] for p in polygon_coords) / len(polygon_coords)
+                lat = sum(p[0] for p in polygon_coords) / len(polygon_coords)
+                lng = sum(p[1] for p in polygon_coords) / len(polygon_coords)
                 map_view.set_center((lat, lng))
         map_view.on('map:ready', on_map_ready)
 
