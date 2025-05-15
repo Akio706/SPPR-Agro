@@ -101,8 +101,8 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
 
     # После инициализации карты — добавляем полигон для select/edit
     if polygon_coords:
-        @map_view.on('map:ready')
-        def _(e):
+        def on_map_ready(e):
             map_view.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
+        map_view.on('map:ready', on_map_ready)
 
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
