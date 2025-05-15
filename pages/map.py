@@ -72,7 +72,7 @@ draw_control = {
 }
 
 # Создаем карту
-m = ui.leaflet(center=(55.75, 37.62), draw_control=draw_control, hide_drawn_items=True)
+m = ui.leaflet(center=(55.75, 37.62), draw_control=draw_control)
 m.on('draw:created', handle_draw)
 
 ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
