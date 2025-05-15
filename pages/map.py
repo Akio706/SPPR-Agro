@@ -57,6 +57,12 @@ ui.html('<div id="map" style="height: 500px;"></div>')
 
 ui.add_body_html("""
 <script>
+window.sendPolygonToPython = function(coords) {
+    // Преобразуем координаты в массив для передачи
+    const arr = coords[0].map(pt => [pt.lat, pt.lng]);
+    window.dispatchEvent(new CustomEvent('polygon_drawn', {detail: {coords: arr}}));
+}
+
 let map = L.map('map').setView([55.75, 37.62], 13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
     maxZoom: 19,
@@ -89,14 +95,6 @@ map.on(L.Draw.Event.CREATED, function (event) {
     window.sendPolygonToPython(coords);
 });
 </script>
-""")
-
-ui.run_javascript("""
-window.sendPolygonToPython = function(coords) {
-    // Преобразуем координаты в массив для передачи
-    const arr = coords[0].map(pt => [pt.lat, pt.lng]);
-    window.dispatchEvent(new CustomEvent('polygon_drawn', {detail: {coords: arr}}));
-}
 """)
 
 ui.on_event('polygon_drawn', on_polygon_drawn)
