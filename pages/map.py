@@ -53,8 +53,9 @@ def on_polygon_drawn(e):
     coords = e.args['coords']
     show_save_dialog(coords)
 
-ui.html('''
-<div id="map" style="height: 500px;"></div>
+ui.html('<div id="map" style="height: 500px;"></div>')
+
+ui.add_body_html("""
 <script>
 let map = L.map('map').setView([55.75, 37.62], 13);
 L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -88,7 +89,7 @@ map.on(L.Draw.Event.CREATED, function (event) {
     window.sendPolygonToPython(coords);
 });
 </script>
-''')
+""")
 
 ui.run_javascript("""
 window.sendPolygonToPython = function(coords) {
