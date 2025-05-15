@@ -3,16 +3,37 @@ from db import Session, Field, Polygon, PolygonPoint
 import json
 from datetime import datetime
 
-def map_page(action: str = None, fields: str = None, field_id: str = None):
+def map_page(action=None, fields=None, field_id=None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
+    # Получаем координаты для редактирования/показа
+    polygon_coords = None
+    if (action in ['edit', 'select']) and fields:
+        session = Session()
+        field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
+        session.close()
+        if field:
+            coords = json.loads(field.coordinates)
+            polygon_coords = coords[0] if isinstance(coords, list) and coords else coords
+
     def handle_draw(e: events.GenericEventArguments):
-        coords = e.args['layer'].get('_latlngs') or e.args['layer'].get('_latlng')
-        if not coords:
-            ui.notify('Не удалось получить координаты объекта', color='negative')
-            return
+        coords = e.args['layer']['_latlngs']
         show_save_dialog(coords)
+
+    def handle_edit(e: events.GenericEventArguments):
+        coords = e.args['layer']['_latlngs']
+        # Сохраняем новые координаты в БД
+        session = Session()
+        field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
+        if field:
+            field.coordinates = json.dumps([coords])
+            field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            session.commit()
+            ui.notify('Полигон успешно обновлён', color='positive')
+        else:
+            ui.notify('Поле не найдено', color='negative')
+        session.close()
 
     def show_save_dialog(coords):
         dialog = ui.dialog()
@@ -27,41 +48,15 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     return
                 session = Session()
                 try:
-                    # 1. Сохраняем сам полигон (Polygon)
-                    polygon = Polygon(
-                        user_id=ui.page.user_id,
-                        coords=json.dumps(coords)
-                    )
-                    session.add(polygon)
-                    session.flush()  # Получаем polygon.id
-
-                    # 2. Проверяем структуру coords
-                    if not (isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list)):
-                        raise ValueError(f"Некорректная структура координат: {coords}")
-
-                    # 3. Сохраняем точки полигона (PolygonPoint)
-                    for point in coords[0]:
-                        if not all(k in point for k in ('lat', 'lng')):
-                            raise ValueError(f"Некорректная точка: {point}")
-                        point_obj = PolygonPoint(
-                            user_id=ui.page.user_id,
-                            lat=point['lat'],
-                            lng=point['lng'],
-                            polygon_id=polygon.id
-                        )
-                        session.add(point_obj)
-
-                    # 4. Создаём запись в таблице Field
                     field = Field(
                         user_id=ui.page.user_id,
                         name=name_input.value,
-                        coordinates=json.dumps(coords),
+                        coordinates=json.dumps([coords]),
                         group=group_input.value,
                         notes=notes_input.value,
                         created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                     )
                     session.add(field)
-
                     session.commit()
                     ui.notify('Полигон успешно создан', color='positive')
                     dialog.close()
@@ -76,7 +71,28 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 ui.button('Сохранить', on_click=save).props('color=positive')
         dialog.open()
 
-    map_view = ui.leaflet(center=(51.505, -0.09), zoom=9, draw_control=True).classes('h-96 w-full')
-    map_view.on('draw:created', handle_draw)
+    draw_control = {
+        'draw': {
+            'polygon': True,
+            'marker': False,
+            'circle': False,
+            'rectangle': False,
+            'polyline': False,
+            'circlemarker': False,
+        },
+        'edit': {
+            'edit': action == 'edit',
+            'remove': False,
+        },
+    }
+
+    m = ui.leaflet(center=(55.75, 37.62), draw_control=draw_control)
+    m.on('draw:created', handle_draw)
+    if action == 'edit':
+        m.on('draw:edited', handle_edit)
+
+    # Если нужно показать или редактировать — отрисовываем полигон
+    if polygon_coords:
+        m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
 
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
