@@ -112,7 +112,20 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                         points = coords_arr[0]
                     else:
                         points = coords_arr
-                    for lat, lng in points:
+                    print('DEBUG: points for PolygonPoint:', points)
+                    for item in points:
+                        # item должен быть списком из двух чисел
+                        if (isinstance(item, list) and len(item) == 2 and
+                            all(isinstance(x, (int, float)) for x in item)):
+                            lat, lng = item
+                        # если вдруг item — словарь с ключами lat/lng и оба значения числа
+                        elif (isinstance(item, dict) and
+                              'lat' in item and 'lng' in item and
+                              isinstance(item['lat'], (int, float)) and isinstance(item['lng'], (int, float))):
+                            lat, lng = item['lat'], item['lng']
+                        else:
+                            print('SKIP BAD POINT:', item)
+                            continue  # пропускаем некорректные элементы
                         point_obj = PolygonPoint(
                             user_id=ui.page.user_id,
                             lat=lat,
