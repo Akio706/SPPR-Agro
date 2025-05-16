@@ -11,19 +11,29 @@ def fields_page():
         return ui.open('/')
     selected = []
 
-    # --- Вкладки ---
-    with ui.card().classes('w-full mb-4'):
-        with ui.tabs().classes('w-full') as tabs:
-            ui.tab('Карта', icon='map')
-            ui.tab('Урожайность', icon='agriculture')
-            ui.tab('Климат', icon='cloud')
-        with ui.tab_panels(tabs, value='Карта').classes('w-full'):
-            with ui.tab_panel('Карта'):
-                ui.label('Здесь будет карта (пустая)').classes('q-mb-md')
-            with ui.tab_panel('Урожайность'):
-                yields_page()
-            with ui.tab_panel('Климат'):
-                climat_page()
+    # --- Горизонтальная навигация ---
+    navigation = ui.row().classes('q-gutter-md q-mb-lg')
+    with navigation:
+        ui.link('Карта', '#section_map')
+        ui.link('Урожайность', '#section_yields')
+        ui.link('Климат', '#section_climat')
+
+    # --- Раздел "Карта" ---
+    ui.link_target('section_map')
+    ui.label('Карта').classes('text-h5 q-mb-md')
+    ui.label('Здесь будет карта (пустая)').classes('q-mb-xl')
+
+    # --- Раздел "Урожайность" ---
+    ui.link_target('section_yields')
+    ui.label('Урожайность').classes('text-h5 q-mb-md')
+    yields_page()
+    ui.separator().classes('q-my-xl')
+
+    # --- Раздел "Климат" ---
+    ui.link_target('section_climat')
+    ui.label('Климат').classes('text-h5 q-mb-md')
+    climat_page()
+    ui.separator().classes('q-my-xl')
 
     # Кнопка выхода
     def logout():
