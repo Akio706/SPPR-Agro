@@ -20,6 +20,9 @@ def fields_page():
     # Кнопка "Создать поле"
     ui.button('Создать поле', on_click=lambda: ui.open('/map?action=create')).props('color=positive').classes('mt-4')
 
+    # Кнопка 'Урожай'
+    ui.button('Урожай', on_click=lambda: ui.open('/yield')).props('color=accent').classes('mt-4')
+
     # Таблица с кнопкой "Редактировать" в каждой строке
     def edit_field(field_id):
         ui.open(f'/map?action=edit&fields={field_id}')
