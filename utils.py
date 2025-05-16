@@ -2,9 +2,6 @@ import requests
 import json
 from datetime import datetime
 from db import Session, Field, SoilAnalysis, ClimateData, FieldArcGISData
-import math
-from shapely.geometry import Polygon as ShapelyPolygon
-from pyproj import Geod
 
 def get_arcgis_soil_params(lat, lng):
     endpoint = "https://www.ncmhtd.com/arcgis/rest/services/NRCS/NRCS_SoilData/MapServer/4/query"
@@ -91,14 +88,4 @@ def coords_from_geojson(geojson):
     # geojson: Feature
     # возвращает [[lat, lng], ...]
     coords = geojson["geometry"]["coordinates"][0]
-    return [[lat, lng] for lng, lat in coords]
-
-def polygon_area_ha(coords):
-    # coords: [[lat, lng], ...]
-    # Возвращает площадь в гектарах
-    if len(coords) < 3:
-        return 0.0
-    geod = Geod(ellps="WGS84")
-    lons, lats = zip(*[(lng, lat) for lat, lng in coords])
-    area, _ = geod.polygon_area_perimeter(lons, lats)
-    return abs(area) / 10000  # м² -> га 
+    return [[lat, lng] for lng, lat in coords] 

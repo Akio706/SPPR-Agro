@@ -17,8 +17,6 @@ def main_page():
                 if user['role'] == 'administrator':
                     ui.link('Управление пользователями', '/users').classes('mt-4')
                 ui.link('Аналитика', '/analytics').classes('mt-4')
-            # После успешного логина
-            ui.open('/fields')
         else:
             ui.notify('Неверное имя пользователя или пароль', type='negative')
 
