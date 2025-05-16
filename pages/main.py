@@ -11,12 +11,7 @@ def main_page():
             ui.page.user_id = user['user_id']
             ui.page.user_role = user['role']
             ui.notify(f'Добро пожаловать, {username}!', type='positive')
-            with ui.row():
-                ui.link('Карта полей', '/map').classes('mt-4')
-                ui.link('Управление полями', '/fields').classes('mt-4')
-                if user['role'] == 'administrator':
-                    ui.link('Управление пользователями', '/users').classes('mt-4')
-                ui.link('Аналитика', '/analytics').classes('mt-4')
+            ui.open('/fields')
         else:
             ui.notify('Неверное имя пользователя или пароль', type='negative')
 

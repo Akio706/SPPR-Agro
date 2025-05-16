@@ -9,6 +9,20 @@ def fields_page():
         return ui.open('/')
     selected = []
 
+    # --- Вкладки ---
+    with ui.card().classes('w-full mb-4'):
+        with ui.tabs().classes('w-full') as tabs:
+            ui.tab('Карта', icon='map')
+            ui.tab('Урожайность', icon='agriculture')
+            ui.tab('Климат', icon='cloud')
+        with ui.tab_panels(tabs, value='Карта').classes('w-full'):
+            with ui.tab_panel('Карта'):
+                ui.label('Здесь будет карта (пустая)').classes('q-mb-md')
+            with ui.tab_panel('Урожайность'):
+                ui.open('/yields')
+            with ui.tab_panel('Климат'):
+                ui.open('/climat')
+
     # Кнопка выхода
     def logout():
         ui.page.user_id = None

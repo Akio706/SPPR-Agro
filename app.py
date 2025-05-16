@@ -7,6 +7,8 @@ app.add_static_files('/static', 'static')
 from pages.main import main_page
 from pages.fields import fields_page
 from pages.map import map_page
+from pages.yields import yields_page
+from pages.climat import climat_page
 
 @ui.page('/')
 def _():
@@ -19,5 +21,13 @@ def _():
 @ui.page('/map')
 def _(action: str = None, fields: str = None, field_id: str = None):
     map_page(action, fields, field_id)
+
+@ui.page('/yields')
+def _():
+    yields_page()
+
+@ui.page('/climat')
+def _():
+    climat_page()
 
 ui.run()
