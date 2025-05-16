@@ -11,12 +11,12 @@ def fields_page():
         return ui.open('/')
     selected = []
 
-    # --- Горизонтальная навигация ---
+    # --- Горизонтальная навигация со ссылками на страницы ---
     navigation = ui.row().classes('q-gutter-md q-mb-lg')
     with navigation:
-        ui.link('Карта', '#section_map')
-        ui.link('Урожайность', '#section_yields')
-        ui.link('Климат', '#section_climat')
+        ui.link('Карта', '/map')
+        ui.link('Урожайность', '/yields')
+        ui.link('Климат', '/climat')
     # (Весь остальной контент страницы удалён по просьбе пользователя)
 
     # Кнопка выхода

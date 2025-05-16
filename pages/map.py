@@ -36,6 +36,11 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
+    # Если нет параметров, просто показываем обычную карту
+    if not action and not fields:
+        ui.leaflet(center=(55.75, 37.62), zoom=6).classes('h-96 w-full')
+        return
+
     polygon_coords = None
     if (action in ['edit', 'select']) and fields:
         polygon_coords = get_polygon_coords_from_geojson(int(fields))
