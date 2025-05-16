@@ -17,23 +17,7 @@ def fields_page():
         ui.link('Карта', '#section_map')
         ui.link('Урожайность', '#section_yields')
         ui.link('Климат', '#section_climat')
-
-    # --- Раздел "Карта" ---
-    ui.link_target('section_map')
-    ui.label('Карта').classes('text-h5 q-mb-md')
-    ui.label('Здесь будет карта (пустая)').classes('q-mb-xl')
-
-    # --- Раздел "Урожайность" ---
-    ui.link_target('section_yields')
-    ui.label('Урожайность').classes('text-h5 q-mb-md')
-    yields_page()
-    ui.separator().classes('q-my-xl')
-
-    # --- Раздел "Климат" ---
-    ui.link_target('section_climat')
-    ui.label('Климат').classes('text-h5 q-mb-md')
-    climat_page()
-    ui.separator().classes('q-my-xl')
+    # (Весь остальной контент страницы удалён по просьбе пользователя)
 
     # Кнопка выхода
     def logout():
