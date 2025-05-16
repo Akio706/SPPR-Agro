@@ -36,7 +36,7 @@ def yields_page():
     session = Session()
     fields = session.query(Field).all()
     session.close()
-    field_options = [(f"{f.id}: {f.name}", f.id) for f in fields]
+    field_options = [(f"{f.id}: {f.name}", str(f.id)) for f in fields]
     selected_field = ui.select(field_options, label='Выберите поле по ID').classes('q-mb-md')
     formula = ui.select([
         ('Простая', 'simple'),
