@@ -30,6 +30,7 @@ def get_region_name(lat, lon):
     return 'Неизвестный регион'
 
 def climat_page():
+    ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.label('Климатические данные').classes('text-h4 q-mb-md')
     lat_input = ui.input('Широта', value='55.75').props('type=number step=0.01')
     lon_input = ui.input('Долгота', value='37.62').props('type=number step=0.01')

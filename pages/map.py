@@ -133,4 +133,5 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 map_view.set_center((lat, lng))
         map_view.on('map:ready', on_map_ready)
 
+    ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')

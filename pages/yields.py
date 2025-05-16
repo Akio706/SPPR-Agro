@@ -53,6 +53,7 @@ def yields_page():
         if not field_id:
             ui.notify('Выберите поле', color='warning')
             return
+        field_id = int(field_id)
         session = Session()
         field = session.query(Field).filter(Field.id == field_id).first()
         session.close()
@@ -136,6 +137,7 @@ def yields_page():
         else:
             ui.notify('Нет данных для расчёта средней урожайности')
 
+    ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.button('Рассчитать урожайность', on_click=calculate_yield).classes('q-mt-md')
     ui.button('Выгрузить результат в CSV', on_click=export_csv).classes('q-mt-md')
     ui.button('Средняя урожайность по всем полям', on_click=avg_yield_all_fields).classes('q-mt-md') 
