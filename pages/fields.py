@@ -3,6 +3,8 @@ from db import Session, Field, SoilAnalysis, ClimateData
 import json
 from datetime import datetime
 import csv
+from pages.yields import yields_page
+from pages.climat import climat_page
 
 def fields_page():
     if not getattr(ui.page, 'user_id', None):
@@ -19,9 +21,9 @@ def fields_page():
             with ui.tab_panel('Карта'):
                 ui.label('Здесь будет карта (пустая)').classes('q-mb-md')
             with ui.tab_panel('Урожайность'):
-                ui.open('/yields')
+                yields_page()
             with ui.tab_panel('Климат'):
-                ui.open('/climat')
+                climat_page()
 
     # Кнопка выхода
     def logout():
