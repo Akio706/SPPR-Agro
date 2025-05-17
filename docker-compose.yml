@@ -1,9 +1,12 @@
+version: '3.8'
+
 # Volumes #####################################################################
 volumes:
   frost_db_data:
     # external: true
   dbbackups:
     # external: true
+  pgadmin_data:
 
 
 # Networks ####################################################################
@@ -13,28 +16,27 @@ networks:
 
 services:
   frost-db:
-    container_name: frost_db
-    image: "kartoza/postgis:${FROST_DB_VERSION:?FROST_DB_VERSION not set}"
+    container_name: ${FROST_DB_CONTNAME}
+    image: "kartoza/postgis:${FROST_DB_VERSION}"
     ports:
-     - 5432:5432
+      - "5432:5432"
     networks:
       - net
     shm_size: '1gb'
     environment:
-      POSTGRES_DB: "${FROST_DB_NAME:?FROST_DB_NAME not set}"
-      POSTGRES_USER: "${FROST_DB_USER:?FROST_DB_USER not set}"
-      POSTGRES_PASSWORD: "${FROST_DB_PASSWORD:?FROST_DB_PASSWORD not set}"
-      POSTGRES_GROUP_NAME: "${FROST_DB_GROUP_NAME:?FROST_DB_GROUP_NAME not set}"
-      POSTGRES_MULTIPLE_EXTENSIONS: "${FROST_DB_EXTENSIONS:?FROST_DB_EXTENSIONS not set}"
+      POSTGRES_DB: ${FROST_DB_NAME}
+      POSTGRES_USER: ${FROST_DB_USER}
+      POSTGRES_PASSWORD: ${FROST_DB_PASSWORD}
+      POSTGRES_GROUP_NAME: ${FROST_DB_GROUP_NAME}
+      POSTGRES_MULTIPLE_EXTENSIONS: ${FROST_DB_EXTENSIONS}
       PGDATA: "/var/lib/postgresql/data/pgdata"
-      PGUSER: "${FROST_DB_USER:?FROST_DB_USER not set}"
+      PGUSER: ${FROST_DB_USER}
       REPLICATION: "false"
       IGNORE_INIT_HOOK_LOCKFILE: "false"
       PASSWORD_AUTHENTICATION: "md5"
       RUN_AS_ROOT: "true"
     volumes:
-     - frost_db_data:/var/lib/postgresql/data
-      - .:/app 
+      - frost_db_data:/var/lib/postgresql/data
     restart: on-failure
     healthcheck:
       test: "PGPASSWORD=${FROST_DB_PASSWORD:?FROST_DB_PASSWORD not set} pg_isready -h 127.0.0.1 -U ${FROST_DB_USER:?FROST_DB_USER not set} -d ${FROST_DB_NAME:?FROST_DB_NAME not set}"
@@ -43,22 +45,25 @@ services:
       retries: 5
   pgadmin:
     image: dpage/pgadmin4
+    container_name: pgadmin
     environment:
-      - PGADMIN_DEFAULT_EMAIL=${PGADMIN_DEFAULT_EMAIL}
-      - PGADMIN_DEFAULT_PASSWORD=${PGADMIN_DEFAULT_PASSWORD}
-      - PGADMIN_CONFIG_SERVER_MODE=${PGADMIN_CONFIG_SERVER_MODE}
-      - PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED=${PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED}
-      - PGADMIN_LISTEN_PORT=5050
-      - SCRIPT_NAME=${PGADMIN_SUBPATH:?PGADMIN_SUBPATH not set}
-      - PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION=${PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION:?PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION not set}
-      - PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT=${PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT:?PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT not set}
-      - PGADMIN_CONFIG_WTF_CSRF_ENABLED=${PGADMIN_CONFIG_WTF_CSRF_ENABLED:?PGADMIN_CONFIG_WTF_CSRF_ENABLED not set}
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
+      PGADMIN_CONFIG_SERVER_MODE: ${PGADMIN_CONFIG_SERVER_MODE}
+      PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED: ${PGADMIN_CONFIG_MASTER_PASSWORD_REQUIRED}
+      PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION: ${PGADMIN_CONFIG_ENHANCED_COOKIE_PROTECTION}
+      PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT: ${PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT}
+      PGADMIN_CONFIG_WTF_CSRF_ENABLED: ${PGADMIN_CONFIG_WTF_CSRF_ENABLED}
+    ports:
+      - "5050:5050"
+    networks:
+      - net
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - frost-db
     entrypoint: /bin/sh -c "chmod 600 /pgpass; /entrypoint.sh;"
     user: root
-    ports:
-     - 5050:5050
-    networks:
-     - net
     configs:
       - source: servers.json
         target: c/servers.json

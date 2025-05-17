@@ -50,7 +50,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         if not coords:
             ui.notify('Не удалось получить координаты объекта', color='negative')
             return
-        # Leaflet всегда отдаёт [[lat, lng], ...]
+        # Leaflet всегда отдаёт [[lat, lng], ...] + добавить блок авто-расчета площади полигона, и если площадь более 1000га, сказать что полигон очень большой и не отрисовать его 
         if isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], dict):
             coords_arr = [[p['lat'], p['lng']] for p in coords]
         elif isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list):
