@@ -33,10 +33,10 @@ def get_polygon_coords_from_geojson(field_id, filename="polygons.geojson"):
     return None
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
-    if not getattr(ui.page, 'user_id', None):
+    if not getattr(ui.page, 'user_id', None): # Проверяем, авторизовался ли пользователь
         return ui.open('/')
 
-    # Если нет параметров, просто показываем обычную карту
+    # Нужно, чтобы была отпись здесь ничего нет, вернитесь на предыдущую страницу   # Если нет параметров, просто показываем обычную карту
     if not action and not fields:
         ui.leaflet(center=(55.75, 37.62), zoom=6).classes('h-96 w-full')
         return
@@ -44,7 +44,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     polygon_coords = None
     if (action in ['edit', 'select']) and fields:
         polygon_coords = get_polygon_coords_from_geojson(int(fields))
-
+    # Если мы получаем параметр edit или select, то мы должны получить координаты полигона и перенестись туда   
     def handle_draw(e: events.GenericEventArguments):
         coords = e.args['layer'].get('_latlngs') or e.args['layer'].get('_latlng')
         if not coords:
@@ -119,7 +119,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 ui.button('Сохранить', on_click=save).props('color=positive')
         dialog.open()
 
-    map_view = ui.leaflet(center=(51.505, -0.09), zoom=9, draw_control=True).classes('h-96 w-full')
+    map_view = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True).classes('h-96 w-full')
     map_view.on('draw:created', handle_draw)
     if action == 'edit':
         map_view.on('draw:edited', handle_edit)
