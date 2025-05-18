@@ -33,105 +33,61 @@ def get_polygon_coords_from_geojson(field_id, filename="polygons.geojson"):
     return None
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
-    if not getattr(ui.page, 'user_id', None): # Проверяем, авторизовался ли пользователь
+    if not getattr(ui.page, 'user_id', None):
         return ui.open('/')
 
-    # Нужно, чтобы была отпись здесь ничего нет, вернитесь на предыдущую страницу   # Если нет параметров, просто показываем обычную карту
-    if not action and not fields:
-        ui.leaflet(center=(55.75, 37.62), zoom=6).classes('h-96 w-full')
-        return
-
     polygon_coords = None
-    if (action in ['edit', 'select']) and fields:
-        polygon_coords = get_polygon_coords_from_geojson(int(fields))
-    # Если мы получаем параметр edit или select, то мы должны получить координаты полигона и перенестись туда   
-    def handle_draw(e: events.GenericEventArguments):
-        coords = e.args['layer'].get('_latlngs') or e.args['layer'].get('_latlng')
-        if not coords:
-            ui.notify('Не удалось получить координаты объекта', color='negative')
-            return
-        # Leaflet всегда отдаёт [[lat, lng], ...] + добавить блок авто-расчета площади полигона, и если площадь более 1000га, сказать что полигон очень большой и не отрисовать его 
-        if isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], dict):
-            coords_arr = [[p['lat'], p['lng']] for p in coords]
-        elif isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list):
-            coords_arr = coords
-        else:
-            coords_arr = coords
-        show_save_dialog(coords_arr)
-
-    def handle_edit(e: events.GenericEventArguments):
-        coords = e.args['layer'].get('_latlngs') or e.args['layer'].get('_latlng')
-        if not coords:
-            ui.notify('Не удалось получить новые координаты', color='negative')
-            return
-        if isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], dict):
-            coords_arr = [[p['lat'], p['lng']] for p in coords]
-        elif isinstance(coords, list) and len(coords) > 0 and isinstance(coords[0], list):
-            coords_arr = coords
-        else:
-            coords_arr = coords
+    if fields:
         session = Session()
         field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
-        if field:
-            field.coordinates = json.dumps(coords_arr)
-            field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-            session.commit()
-            ui.notify('Полигон успешно обновлён', color='positive')
-            export_all_fields_to_geojson(ui.page.user_id)
-        else:
-            ui.notify('Поле не найдено', color='negative')
         session.close()
+        if field:
+            polygon_coords = json.loads(field.coordinates)
 
-    def show_save_dialog(coords_arr):
-        dialog = ui.dialog()
-        with dialog, ui.card():
-            ui.label('Сохранить новый полигон').classes('text-h6 q-mb-md')
-            name_input = ui.input(label='Название').classes('w-full q-mb-sm')
-            group_input = ui.input(label='Группа').classes('w-full q-mb-sm')
-            notes_input = ui.textarea(label='Заметки').classes('w-full q-mb-md')
-            def save():
-                if not name_input.value:
-                    ui.notify('Введите название', type='warning')
-                    return
-                session = Session()
-                try:
-                    field = Field(
-                        user_id=ui.page.user_id,
-                        name=name_input.value,
-                        coordinates=json.dumps(coords_arr),
-                        group=group_input.value,
-                        notes=notes_input.value,
-                        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    )
-                    session.add(field)
-                    session.commit()
-                    ui.notify('Полигон успешно создан', color='positive')
-                    dialog.close()
-                    export_all_fields_to_geojson(ui.page.user_id)
-                    ui.open('/fields')
-                except Exception as e:
-                    session.rollback()
-                    ui.notify(f'Ошибка при создании полигона: {e}', color='negative')
-                finally:
-                    session.close()
-            with ui.row().classes('w-full justify-end'):
-                ui.button('Отмена', on_click=dialog.close).props('flat')
-                ui.button('Сохранить', on_click=save).props('color=positive')
-        dialog.open()
+    if action == "edit" and polygon_coords:
+        draw_control = {
+            'draw': {
+                'polygon': False,
+                'marker': False,
+                'circle': False,
+                'rectangle': False,
+                'polyline': False,
+                'circlemarker': False,
+            },
+            'edit': {
+                'edit': True,
+                'remove': False,
+            },
+        }
+        m = ui.leaflet(center=(polygon_coords[0][0], polygon_coords[0][1]), zoom=13, draw_control=draw_control, hide_drawn_items=True).classes('h-96 w-full')
+        m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
 
-    map_view = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True).classes('h-96 w-full')
-    map_view.on('draw:created', handle_draw)
-    if action == 'edit':
-        map_view.on('draw:edited', handle_edit)
+        def handle_edit(e: events.GenericEventArguments):
+            coords = e.args['layers'][0]['_latlngs']
+            session = Session()
+            field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
+            if field:
+                field.coordinates = json.dumps(coords)
+                field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                session.commit()
+                ui.notify('Полигон успешно обновлён', color='positive')
+            else:
+                ui.notify('Поле не найдено', color='negative')
+            session.close()
+        m.on('draw:edited', handle_edit)
 
-    if polygon_coords:
-        def on_map_ready(e):
-            map_view.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
-            if polygon_coords and len(polygon_coords) > 0:
-                lat = sum(p[0] for p in polygon_coords) / len(polygon_coords)
-                lng = sum(p[1] for p in polygon_coords) / len(polygon_coords)
-                map_view.set_center((lat, lng))
-        map_view.on('map:ready', on_map_ready)
+    elif action == "select" and polygon_coords:
+        m = ui.leaflet(center=(polygon_coords[0][0], polygon_coords[0][1]), zoom=13, draw_control=False, hide_drawn_items=True).classes('h-96 w-full')
+        m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
+
+    else:
+        session = Session()
+        user_fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
+        session.close()
+        polygons = [json.loads(field.coordinates) for field in user_fields]
+        m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True, hide_drawn_items=True).classes('h-96 w-full')
+        for coords in polygons:
+            m.generic_layer(name='polygon', args=[coords, {'color': 'red', 'weight': 1}])
 
     ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
