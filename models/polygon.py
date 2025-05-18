@@ -1,24 +1,14 @@
 from sqlalchemy import Column, Integer, Float, String, ForeignKey, Text, DateTime
 from sqlalchemy.orm import relationship
-from models.database import Base
-from datetime import datetime
-import bcrypt
+#from models.database import Base  # Удаляем, чтобы не было конфликтов
+#from datetime import datetime
+#import bcrypt
 
-class User(Base):
-    __tablename__ = 'users'
-    
-    id = Column(Integer, primary_key=True)
-    username = Column(String(50), unique=True, nullable=False)
-    password_hash = Column(String(128), nullable=False)
-    created_at = Column(DateTime, default=datetime.utcnow)
-    
-    polygons = relationship("Polygon", back_populates="user")
-    
-    def set_password(self, password):
-        self.password_hash = bcrypt.hashpw(password.encode('utf-8'), bcrypt.gensalt()).decode('utf-8')
-        
-    def check_password(self, password):
-        return bcrypt.checkpw(password.encode('utf-8'), self.password_hash.encode('utf-8'))
+# Удаляем дублирующую модель User и методы set_password/check_password
+
+# Если нужны Polygon и PolygonPoint, их можно оставить, но использовать Base из db.py при необходимости
+# class Polygon(Base): ...
+# class PolygonPoint(Base): ...
 
 class Polygon(Base):
     __tablename__ = 'polygons'

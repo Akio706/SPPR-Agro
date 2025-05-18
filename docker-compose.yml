@@ -55,7 +55,7 @@ services:
       PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT: ${PGADMIN_CONFIG_WTF_CSRF_CHECK_DEFAULT}
       PGADMIN_CONFIG_WTF_CSRF_ENABLED: ${PGADMIN_CONFIG_WTF_CSRF_ENABLED}
     ports:
-      - "5050:5050"
+      - "5050:80"
     networks:
       - net
     volumes:
