@@ -39,10 +39,9 @@ def main_page():
                 login_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
                 ui.button('Войти', on_click=lambda: login(login_username.value, login_password.value)).classes('w-full')
             with ui.tab_panel('Регистрация'):
-                with ui.form(on_submit=lambda: register(reg_username.value, reg_password.value, reg_email.value)):
-                    reg_username = ui.input(label='Имя пользователя').classes('w-full q-mb-md')
-                    reg_email = ui.input(label='Email').classes('w-full q-mb-md')
-                    reg_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
-                    ui.button('Зарегистрироваться', type='submit').classes('w-full')
+                reg_username = ui.input(label='Имя пользователя').classes('w-full q-mb-md')
+                reg_email = ui.input(label='Email').classes('w-full q-mb-md')
+                reg_password = ui.input(label='Пароль', password=True).classes('w-full q-mb-md')
+                ui.button('Зарегистрироваться', on_click=lambda: register(reg_username.value, reg_password.value, reg_email.value)).classes('w-full')
 
     # Кнопка выхода не нужна на странице авторизации! 

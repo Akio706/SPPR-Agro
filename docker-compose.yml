@@ -82,13 +82,13 @@ services:
      - net
 configs:
   pgpass:
-    content: ${FROST_DB_CONTNAME:?FROST_DB_CONTNAME not set}:5432:*:${FROST_DB_USER:?FROST_DB_USER not set}:${FROST_DB_PASSWORD:?FROST_DB_PASSWORD not set}
+    content: frost_db:5432:*:${FROST_DB_USER:?FROST_DB_USER not set}:${FROST_DB_PASSWORD:?FROST_DB_PASSWORD not set}
   servers.json:
     content: |
       {"Servers": {"1": {
         "Group": "Servers",
         "Name": "My Local Postgres 16.1",
-        "Host": "${FROST_DB_CONTNAME:?FROST_DB_CONTNAME not set}",
+        "Host": "frost_db",
         "Port": 5432,
         "MaintenanceDB": "postgres",
         "Username": "${FROST_DB_USER:?FROST_DB_USER not set}",
