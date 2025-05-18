@@ -1,4 +1,5 @@
 from nicegui import app, ui
+from db import initialize_db
 
 # Эта строка обязательно должна быть до ui.run()
 app.add_static_files('/static', 'static')
@@ -9,6 +10,8 @@ from pages.fields import fields_page
 from pages.map import map_page
 from pages.yields import yields_page
 from pages.climat import climat_page
+
+initialize_db()
 
 @ui.page('/')
 def _():
