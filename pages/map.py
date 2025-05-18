@@ -71,7 +71,11 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     if (action == "edit" or action == "select") and not field_found:
         ui.label('Поле не найдено').classes('text-h6 q-mb-md')
     elif action == "edit" and polygon_coords is not None:
-        center = get_polygon_center(polygon_coords) if polygon_coords else (55.75, 37.62)
+        print(f"[DEBUG] Координаты для edit поля {fields}: {polygon_coords}")
+        valid_polygon = polygon_coords and isinstance(polygon_coords, list) and len(polygon_coords) >= 3 and all(isinstance(p, (list, tuple)) and len(p) == 2 for p in polygon_coords)
+        if not valid_polygon:
+            ui.label('Внимание: у выбранного поля отсутствуют или некорректны координаты для полигона.').classes('text-negative q-mb-md')
+        center = get_polygon_center(polygon_coords) if valid_polygon else (55.75, 37.62)
         draw_control = {
             'draw': {
                 'polygon': False,
@@ -87,7 +91,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             },
         }
         m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
-        if polygon_coords and isinstance(polygon_coords, list) and len(polygon_coords) >= 3:
+        if valid_polygon:
             m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
         def handle_edit(e: events.GenericEventArguments):
             coords = normalize_coords(e.args['layers'][0]['_latlngs'])
@@ -104,7 +108,11 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m.on('draw:edited', handle_edit)
 
     elif action == "select" and polygon_coords is not None:
-        center = get_polygon_center(polygon_coords) if polygon_coords else (55.75, 37.62)
+        print(f"[DEBUG] Координаты для select поля {fields}: {polygon_coords}")
+        valid_polygon = polygon_coords and isinstance(polygon_coords, list) and len(polygon_coords) >= 3 and all(isinstance(p, (list, tuple)) and len(p) == 2 for p in polygon_coords)
+        if not valid_polygon:
+            ui.label('Внимание: у выбранного поля отсутствуют или некорректны координаты для полигона.').classes('text-negative q-mb-md')
+        center = get_polygon_center(polygon_coords) if valid_polygon else (55.75, 37.62)
         draw_control = {
             'draw': {
                 'polygon': False,
@@ -120,7 +128,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             },
         }
         m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
-        if polygon_coords and isinstance(polygon_coords, list) and len(polygon_coords) >= 3:
+        if valid_polygon:
             m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
 
     elif action == "create":
