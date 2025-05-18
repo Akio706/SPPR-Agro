@@ -59,7 +59,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 'remove': False,
             },
         }
-        m = ui.leaflet(center=(polygon_coords[0][0], polygon_coords[0][1]), zoom=13, draw_control=draw_control, hide_drawn_items=True).classes('h-96 w-full')
+        m = ui.leaflet(center=(polygon_coords[0][0], polygon_coords[0][1]), zoom=13, draw_control=draw_control).classes('h-96 w-full')
         m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
 
         def handle_edit(e: events.GenericEventArguments):
@@ -77,7 +77,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m.on('draw:edited', handle_edit)
 
     elif action == "select" and polygon_coords:
-        m = ui.leaflet(center=(polygon_coords[0][0], polygon_coords[0][1]), zoom=13, draw_control=False, hide_drawn_items=True).classes('h-96 w-full')
+        m = ui.leaflet(center=(polygon_coords[0][0], polygon_coords[0][1]), zoom=13, draw_control=False).classes('h-96 w-full')
         m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
 
     else:
@@ -85,7 +85,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         user_fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
         session.close()
         polygons = [json.loads(field.coordinates) for field in user_fields]
-        m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True, hide_drawn_items=True).classes('h-96 w-full')
+        m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True).classes('h-96 w-full')
         for coords in polygons:
             m.generic_layer(name='polygon', args=[coords, {'color': 'red', 'weight': 1}])
 
