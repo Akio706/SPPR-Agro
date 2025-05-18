@@ -25,12 +25,16 @@ def export_all_fields_to_geojson(user_id, filename="polygons.geojson"):
 def get_polygon_center(coords):
     if not coords or not isinstance(coords, list):
         return (55.75, 37.62)
-    if isinstance(coords[0], dict):
+    # Если coords — список списков (lat, lng)
+    if isinstance(coords[0], (list, tuple)):
+        lats = [p[0] for p in coords]
+        lngs = [p[1] for p in coords]
+    # Если coords — список словарей {'lat': ..., 'lng': ...}
+    elif isinstance(coords[0], dict):
         lats = [p['lat'] for p in coords]
         lngs = [p['lng'] for p in coords]
     else:
-        lats = [p[0] for p in coords]
-        lngs = [p[1] for p in coords]
+        return (55.75, 37.62)
     return (sum(lats) / len(lats), sum(lngs) / len(lngs))
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
@@ -83,35 +87,42 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m = ui.leaflet(center=center, zoom=13, draw_control=False).classes('h-96 w-full')
         m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
 
-    else:
-        session = Session()
-        user_fields = session.query(Field).filter(Field.user_id == ui.page.user_id).all()
-        session.close()
-        polygons = [json.loads(field.coordinates) for field in user_fields]
+    elif action == "create":
+        # Показываем только пустую карту для создания нового полигона
         m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True).classes('h-96 w-full')
-        for coords in polygons:
-            m.generic_layer(name='polygon', args=[coords, {'color': 'red', 'weight': 1}])
 
         def handle_draw(e: events.GenericEventArguments):
             coords = e.args['layer']['_latlngs']
-            session = Session()
-            try:
-                field = Field(
-                    user_id=ui.page.user_id,
-                    name=f"Поле {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                    coordinates=json.dumps(coords),
-                    created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                )
-                session.add(field)
-                session.commit()
-                ui.notify('Полигон успешно создан', color='positive')
-                ui.open('/fields')
-            except Exception as ex:
-                session.rollback()
-                ui.notify(f'Ошибка при создании полигона: {ex}', color='negative')
-            finally:
-                session.close()
+            def save_polygon():
+                session = Session()
+                try:
+                    field = Field(
+                        user_id=ui.page.user_id,
+                        name=f"Поле {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                        coordinates=json.dumps(coords),
+                        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    )
+                    session.add(field)
+                    session.commit()
+                    ui.notify('Полигон успешно создан', color='positive')
+                    ui.open('/fields')
+                except Exception as ex:
+                    session.rollback()
+                    ui.notify(f'Ошибка при создании полигона: {ex}', color='negative')
+                finally:
+                    session.close()
+            ui.dialog(
+                title='Создать новое поле?',
+                content=ui.label('Вы уверены, что хотите создать новый полигон?'),
+                actions=[
+                    ui.button('Создать', on_click=save_polygon),
+                    ui.button('Отмена', on_click=lambda: ui.notify('Создание отменено', color='warning'))
+                ]
+            ).open()
         m.on('draw:created', handle_draw)
+
+    else:
+        ui.label('Некорректный режим карты')
 
     ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
