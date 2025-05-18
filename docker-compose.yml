@@ -16,7 +16,7 @@ networks:
 
 services:
   frost-db:
-    container_name: ${FROST_DB_CONTNAME}
+    container_name: frost_db
     image: "kartoza/postgis:${FROST_DB_VERSION}"
     ports:
       - "5432:5432"
