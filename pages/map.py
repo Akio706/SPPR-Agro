@@ -22,6 +22,22 @@ def export_all_fields_to_geojson(user_id, filename="polygons.geojson"):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(geojson, f, ensure_ascii=False, indent=2)
 
+def normalize_coords(coords):
+    # Рекурсивно приводит координаты к формату [[lat, lng], ...]
+    if not coords or not isinstance(coords, list):
+        return []
+    # Если первый элемент — список, возможно, это вложенность (например, для полигонов)
+    if isinstance(coords[0], list):
+        # Если это список списков, рекурсивно разворачиваем
+        return [item for sub in coords for item in normalize_coords(sub)]
+    # Если первый элемент — словарь
+    if isinstance(coords[0], dict):
+        return [[p['lat'], p['lng']] for p in coords if 'lat' in p and 'lng' in p]
+    # Если первый элемент — кортеж или список с двумя числами
+    if isinstance(coords[0], (tuple, list)) and len(coords[0]) == 2:
+        return [[p[0], p[1]] for p in coords]
+    return []
+
 def get_polygon_center(coords):
     if not coords or not isinstance(coords, list):
         return (55.75, 37.62)
@@ -47,7 +63,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
         session.close()
         if field:
-            polygon_coords = json.loads(field.coordinates)
+            polygon_coords = normalize_coords(json.loads(field.coordinates))
 
     if action == "edit" and polygon_coords:
         center = get_polygon_center(polygon_coords)
@@ -69,7 +85,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
 
         def handle_edit(e: events.GenericEventArguments):
-            coords = e.args['layers'][0]['_latlngs']
+            coords = normalize_coords(e.args['layers'][0]['_latlngs'])
             session = Session()
             field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
             if field:
@@ -92,33 +108,33 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True).classes('h-96 w-full')
 
         def handle_draw(e: events.GenericEventArguments):
-            coords = e.args['layer']['_latlngs']
-            def save_polygon():
-                session = Session()
-                try:
-                    field = Field(
-                        user_id=ui.page.user_id,
-                        name=f"Поле {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                        coordinates=json.dumps(coords),
-                        created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                    )
-                    session.add(field)
-                    session.commit()
-                    ui.notify('Полигон успешно создан', color='positive')
-                    ui.open('/fields')
-                except Exception as ex:
-                    session.rollback()
-                    ui.notify(f'Ошибка при создании полигона: {ex}', color='negative')
-                finally:
-                    session.close()
-            ui.dialog(
-                title='Создать новое поле?',
-                content=ui.label('Вы уверены, что хотите создать новый полигон?'),
-                actions=[
-                    ui.button('Создать', on_click=save_polygon),
-                    ui.button('Отмена', on_click=lambda: ui.notify('Создание отменено', color='warning'))
-                ]
-            ).open()
+            coords = normalize_coords(e.args['layer']['_latlngs'])
+            with ui.dialog() as dialog:
+                ui.label('Создать новое поле?').classes('text-h6 q-mb-md')
+                ui.label('Вы уверены, что хотите создать новый полигон?')
+                with ui.row():
+                    def save_polygon():
+                        session = Session()
+                        try:
+                            field = Field(
+                                user_id=ui.page.user_id,
+                                name=f"Поле {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                                coordinates=json.dumps(coords),
+                                created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            )
+                            session.add(field)
+                            session.commit()
+                            ui.notify('Полигон успешно создан', color='positive')
+                            ui.open('/fields')
+                        except Exception as ex:
+                            session.rollback()
+                            ui.notify(f'Ошибка при создании полигона: {ex}', color='negative')
+                        finally:
+                            session.close()
+                        dialog.close()
+                    ui.button('Создать', on_click=save_polygon).props('color=primary')
+                    ui.button('Отмена', on_click=lambda: dialog.close()).props('color=negative')
+            dialog.open()
         m.on('draw:created', handle_draw)
 
     else:
