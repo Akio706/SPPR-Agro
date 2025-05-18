@@ -58,14 +58,19 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         return ui.open('/')
 
     polygon_coords = None
+    field_found = True
     if fields:
         session = Session()
         field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
         session.close()
         if field:
             polygon_coords = normalize_coords(json.loads(field.coordinates))
+        else:
+            field_found = False
 
-    if action == "edit" and polygon_coords is not None:
+    if (action == "edit" or action == "select") and not field_found:
+        ui.label('Поле не найдено').classes('text-h6 q-mb-md')
+    elif action == "edit" and polygon_coords is not None:
         center = get_polygon_center(polygon_coords) if polygon_coords else (55.75, 37.62)
         draw_control = {
             'draw': {
@@ -84,7 +89,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
         if polygon_coords and isinstance(polygon_coords, list) and len(polygon_coords) >= 3:
             m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
-
         def handle_edit(e: events.GenericEventArguments):
             coords = normalize_coords(e.args['layers'][0]['_latlngs'])
             session = Session()
