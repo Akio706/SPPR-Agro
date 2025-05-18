@@ -65,7 +65,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         if field:
             polygon_coords = normalize_coords(json.loads(field.coordinates))
 
-    if action == "edit" and polygon_coords:
+    if action == "edit" and polygon_coords is not None:
         center = get_polygon_center(polygon_coords) if polygon_coords else (55.75, 37.62)
         draw_control = {
             'draw': {
@@ -82,7 +82,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             },
         }
         m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
-        if polygon_coords:
+        if polygon_coords and isinstance(polygon_coords, list) and len(polygon_coords) >= 3:
             m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
 
         def handle_edit(e: events.GenericEventArguments):
@@ -99,10 +99,10 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             session.close()
         m.on('draw:edited', handle_edit)
 
-    elif action == "select" and polygon_coords:
+    elif action == "select" and polygon_coords is not None:
         center = get_polygon_center(polygon_coords) if polygon_coords else (55.75, 37.62)
         m = ui.leaflet(center=center, zoom=13, draw_control=False).classes('h-96 w-full')
-        if polygon_coords:
+        if polygon_coords and isinstance(polygon_coords, list) and len(polygon_coords) >= 3:
             m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
 
     elif action == "create":
