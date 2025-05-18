@@ -74,6 +74,12 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
 
     if (action in ("edit", "select")) and not field_found:
         ui.label('Поле не найдено').classes('text-h6 q-mb-md')
+        center = (55.75, 37.62)
+        draw_control = {
+            'draw': {k: False for k in ['polygon', 'marker', 'circle', 'rectangle', 'polyline', 'circlemarker']},
+            'edit': {'edit': action == 'edit', 'remove': False},
+        }
+        show_leaflet_map(center, draw_control)
     elif action == "edit" and polygon_coords is not None:
         valid_polygon = polygon_coords and len(polygon_coords) >= 3 and all(isinstance(p, (list, tuple)) and len(p) == 2 for p in polygon_coords)
         if not valid_polygon:
@@ -96,7 +102,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 ui.notify('Поле не найдено', color='negative')
             session.close()
         show_leaflet_map(center, draw_control, polygon_coords if valid_polygon else None, color='red', on_edit=handle_edit)
-
     elif action == "select" and polygon_coords is not None:
         valid_polygon = polygon_coords and len(polygon_coords) >= 3 and all(isinstance(p, (list, tuple)) and len(p) == 2 for p in polygon_coords)
         if not valid_polygon:
@@ -107,36 +112,36 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             'edit': {'edit': False, 'remove': False},
         }
         show_leaflet_map(center, draw_control, polygon_coords if valid_polygon else None, color='blue')
-
     elif action == "create":
         m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True).classes('h-96 w-full')
         def handle_draw(e: events.GenericEventArguments):
             coords = normalize_coords(e.args['layer']['_latlngs'])
-            session = Session()
-            try:
-                field = Field(
-                    user_id=ui.page.user_id,
-                    name=f"Поле {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                    coordinates=json.dumps(coords),
-                    created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                )
-                session.add(field)
-                session.commit()
-                def close_dialog():
-                    dialog.close()
-                    ui.open('/fields')
-                with ui.dialog() as dialog:
-                    ui.label('Полигон успешно создан!').classes('text-h6 q-mb-md')
-                    ui.button('ОК', on_click=close_dialog).props('color=primary')
-                dialog.open()
-            except Exception as ex:
-                session.rollback()
-                with ui.dialog() as dialog:
-                    ui.label(f'Ошибка при создании полигона: {ex}').classes('text-h6 q-mb-md')
-                    ui.button('Закрыть', on_click=dialog.close).props('color=negative')
-                dialog.open()
-            finally:
-                session.close()
+            with ui.dialog() as dialog:
+                ui.label('Создать новое поле').classes('text-h6 q-mb-md')
+                name_input = ui.input(label='Название поля').classes('q-mb-md')
+                with ui.row():
+                    def save_field():
+                        session = Session()
+                        try:
+                            field = Field(
+                                user_id=ui.page.user_id,
+                                name=name_input.value or f"Поле {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                                coordinates=json.dumps(coords),
+                                created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                            )
+                            session.add(field)
+                            session.commit()
+                            dialog.close()
+                            ui.notify('Поле успешно создано!', color='positive')
+                            ui.open('/fields')
+                        except Exception as ex:
+                            session.rollback()
+                            ui.notify(f'Ошибка при создании поля: {ex}', color='negative')
+                        finally:
+                            session.close()
+                    ui.button('Сохранить', on_click=save_field).props('color=primary')
+                    ui.button('Отмена', on_click=dialog.close).props('color=negative')
+            dialog.open()
         m.on('draw:created', handle_draw)
 
     else:
