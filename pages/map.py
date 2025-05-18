@@ -101,7 +101,21 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
 
     elif action == "select" and polygon_coords is not None:
         center = get_polygon_center(polygon_coords) if polygon_coords else (55.75, 37.62)
-        m = ui.leaflet(center=center, zoom=13, draw_control=False).classes('h-96 w-full')
+        draw_control = {
+            'draw': {
+                'polygon': False,
+                'marker': False,
+                'circle': False,
+                'rectangle': False,
+                'polyline': False,
+                'circlemarker': False,
+            },
+            'edit': {
+                'edit': False,
+                'remove': False,
+            },
+        }
+        m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
         if polygon_coords and isinstance(polygon_coords, list) and len(polygon_coords) >= 3:
             m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
 
