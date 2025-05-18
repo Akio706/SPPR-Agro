@@ -1,5 +1,5 @@
 from nicegui import app, ui
-from db import initialize_db
+from db import initialize_db, Base, engine
 
 # Эта строка обязательно должна быть до ui.run()
 app.add_static_files('/static', 'static')
@@ -10,6 +10,8 @@ from pages.fields import fields_page
 from pages.map import map_page
 from pages.yields import yields_page
 from pages.climat import climat_page
+
+Base.metadata.create_all(bind=engine)
 
 initialize_db()
 
