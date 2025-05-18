@@ -76,19 +76,51 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         ui.label('Поле не найдено').classes('text-h6 q-mb-md')
         center = (55.75, 37.62)
         draw_control = {
-            'draw': {k: False for k in ['polygon', 'marker', 'circle', 'rectangle', 'polyline', 'circlemarker']},
-            'edit': {'edit': action == 'edit', 'remove': False},
+            'draw': {
+                'polygon': True,
+                'marker': False,
+                'circle': False,
+                'rectangle': False,
+                'polyline': False,
+                'circlemarker': False,
+            },
+            'edit': {
+                'edit': action == 'edit',
+                'remove': False,
+            },
         }
-        show_leaflet_map(center, draw_control)
+        m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
     elif action == "edit" and polygon_coords is not None:
-        valid_polygon = polygon_coords and len(polygon_coords) >= 3 and all(isinstance(p, (list, tuple)) and len(p) == 2 for p in polygon_coords)
-        if not valid_polygon:
-            ui.label('Внимание: у выбранного поля отсутствуют или некорректны координаты для полигона.').classes('text-negative q-mb-md')
-        center = get_polygon_center(polygon_coords) if valid_polygon else (55.75, 37.62)
+        center = get_polygon_center(polygon_coords) if polygon_coords and len(polygon_coords) >= 3 else (55.75, 37.62)
         draw_control = {
-            'draw': {k: False for k in ['polygon', 'marker', 'circle', 'rectangle', 'polyline', 'circlemarker']},
-            'edit': {'edit': True, 'remove': False},
+            'draw': {
+                'polygon': True,
+                'marker': False,
+                'circle': False,
+                'rectangle': False,
+                'polyline': False,
+                'circlemarker': False,
+            },
+            'edit': {
+                'edit': True,
+                'remove': False,
+            },
         }
+        m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
+        if polygon_coords and len(polygon_coords) >= 3:
+            m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
+        def handle_draw(e: events.GenericEventArguments):
+            coords = normalize_coords(e.args['layer']['_latlngs'])
+            session = Session()
+            field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
+            if field:
+                field.coordinates = json.dumps(coords)
+                field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                session.commit()
+                ui.notify('Полигон успешно сохранён', color='positive')
+            else:
+                ui.notify('Поле не найдено', color='negative')
+            session.close()
         def handle_edit(e: events.GenericEventArguments):
             coords = normalize_coords(e.args['layers'][0]['_latlngs'])
             session = Session()
@@ -101,19 +133,42 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             else:
                 ui.notify('Поле не найдено', color='negative')
             session.close()
-        show_leaflet_map(center, draw_control, polygon_coords if valid_polygon else None, color='red', on_edit=handle_edit)
+        m.on('draw:created', handle_draw)
+        m.on('draw:edited', handle_edit)
     elif action == "select" and polygon_coords is not None:
-        valid_polygon = polygon_coords and len(polygon_coords) >= 3 and all(isinstance(p, (list, tuple)) and len(p) == 2 for p in polygon_coords)
-        if not valid_polygon:
-            ui.label('Внимание: у выбранного поля отсутствуют или некорректны координаты для полигона.').classes('text-negative q-mb-md')
-        center = get_polygon_center(polygon_coords) if valid_polygon else (55.75, 37.62)
+        center = get_polygon_center(polygon_coords) if polygon_coords and len(polygon_coords) >= 3 else (55.75, 37.62)
         draw_control = {
-            'draw': {k: False for k in ['polygon', 'marker', 'circle', 'rectangle', 'polyline', 'circlemarker']},
-            'edit': {'edit': False, 'remove': False},
+            'draw': {
+                'polygon': False,
+                'marker': False,
+                'circle': False,
+                'rectangle': False,
+                'polyline': False,
+                'circlemarker': False,
+            },
+            'edit': {
+                'edit': False,
+                'remove': False,
+            },
         }
-        show_leaflet_map(center, draw_control, polygon_coords if valid_polygon else None, color='blue')
+        m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
+        if polygon_coords and len(polygon_coords) >= 3:
+            m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
     elif action == "create":
-        m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True).classes('h-96 w-full')
+        m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control={
+            'draw': {
+                'polygon': True,
+                'marker': False,
+                'circle': False,
+                'rectangle': False,
+                'polyline': False,
+                'circlemarker': False,
+            },
+            'edit': {
+                'edit': False,
+                'remove': False,
+            },
+        }).classes('h-96 w-full')
         def handle_draw(e: events.GenericEventArguments):
             coords = normalize_coords(e.args['layer']['_latlngs'])
             with ui.dialog() as dialog:
