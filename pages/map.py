@@ -66,7 +66,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             polygon_coords = normalize_coords(json.loads(field.coordinates))
 
     if action == "edit" and polygon_coords:
-        center = get_polygon_center(polygon_coords)
+        center = get_polygon_center(polygon_coords) if polygon_coords else (55.75, 37.62)
         draw_control = {
             'draw': {
                 'polygon': False,
@@ -82,7 +82,8 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             },
         }
         m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
-        m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
+        if polygon_coords:
+            m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
 
         def handle_edit(e: events.GenericEventArguments):
             coords = normalize_coords(e.args['layers'][0]['_latlngs'])
@@ -99,42 +100,41 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m.on('draw:edited', handle_edit)
 
     elif action == "select" and polygon_coords:
-        center = get_polygon_center(polygon_coords)
+        center = get_polygon_center(polygon_coords) if polygon_coords else (55.75, 37.62)
         m = ui.leaflet(center=center, zoom=13, draw_control=False).classes('h-96 w-full')
-        m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
+        if polygon_coords:
+            m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
 
     elif action == "create":
-        # Показываем только пустую карту для создания нового полигона
         m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True).classes('h-96 w-full')
 
         def handle_draw(e: events.GenericEventArguments):
             coords = normalize_coords(e.args['layer']['_latlngs'])
-            with ui.dialog() as dialog:
-                ui.label('Создать новое поле?').classes('text-h6 q-mb-md')
-                ui.label('Вы уверены, что хотите создать новый полигон?')
-                with ui.row():
-                    def save_polygon():
-                        session = Session()
-                        try:
-                            field = Field(
-                                user_id=ui.page.user_id,
-                                name=f"Поле {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-                                coordinates=json.dumps(coords),
-                                created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                            )
-                            session.add(field)
-                            session.commit()
-                            ui.notify('Полигон успешно создан', color='positive')
-                            ui.open('/fields')
-                        except Exception as ex:
-                            session.rollback()
-                            ui.notify(f'Ошибка при создании полигона: {ex}', color='negative')
-                        finally:
-                            session.close()
-                        dialog.close()
-                    ui.button('Создать', on_click=save_polygon).props('color=primary')
-                    ui.button('Отмена', on_click=lambda: dialog.close()).props('color=negative')
-            dialog.open()
+            session = Session()
+            try:
+                field = Field(
+                    user_id=ui.page.user_id,
+                    name=f"Поле {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    coordinates=json.dumps(coords),
+                    created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                )
+                session.add(field)
+                session.commit()
+                def close_dialog():
+                    dialog.close()
+                    ui.open('/fields')
+                with ui.dialog() as dialog:
+                    ui.label('Полигон успешно создан!').classes('text-h6 q-mb-md')
+                    ui.button('ОК', on_click=close_dialog).props('color=primary')
+                dialog.open()
+            except Exception as ex:
+                session.rollback()
+                with ui.dialog() as dialog:
+                    ui.label(f'Ошибка при создании полигона: {ex}').classes('text-h6 q-mb-md')
+                    ui.button('Закрыть', on_click=dialog.close).props('color=negative')
+                dialog.open()
+            finally:
+                session.close()
         m.on('draw:created', handle_draw)
 
     else:
