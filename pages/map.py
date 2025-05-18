@@ -22,15 +22,16 @@ def export_all_fields_to_geojson(user_id, filename="polygons.geojson"):
     with open(filename, "w", encoding="utf-8") as f:
         json.dump(geojson, f, ensure_ascii=False, indent=2)
 
-def get_polygon_coords_from_geojson(field_id, filename="polygons.geojson"):
-    if not os.path.exists(filename):
-        return None
-    with open(filename, "r", encoding="utf-8") as f:
-        geojson = json.load(f)
-    for feature in geojson["features"]:
-        if feature["properties"].get("id") == field_id:
-            return coords_from_geojson(feature)
-    return None
+def get_polygon_center(coords):
+    if not coords or not isinstance(coords, list):
+        return (55.75, 37.62)
+    if isinstance(coords[0], dict):
+        lats = [p['lat'] for p in coords]
+        lngs = [p['lng'] for p in coords]
+    else:
+        lats = [p[0] for p in coords]
+        lngs = [p[1] for p in coords]
+    return (sum(lats) / len(lats), sum(lngs) / len(lngs))
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
     if not getattr(ui.page, 'user_id', None):
@@ -45,6 +46,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             polygon_coords = json.loads(field.coordinates)
 
     if action == "edit" and polygon_coords:
+        center = get_polygon_center(polygon_coords)
         draw_control = {
             'draw': {
                 'polygon': False,
@@ -59,7 +61,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 'remove': False,
             },
         }
-        m = ui.leaflet(center=(polygon_coords[0][0], polygon_coords[0][1]), zoom=13, draw_control=draw_control).classes('h-96 w-full')
+        m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
         m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
 
         def handle_edit(e: events.GenericEventArguments):
@@ -77,7 +79,8 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m.on('draw:edited', handle_edit)
 
     elif action == "select" and polygon_coords:
-        m = ui.leaflet(center=(polygon_coords[0][0], polygon_coords[0][1]), zoom=13, draw_control=False).classes('h-96 w-full')
+        center = get_polygon_center(polygon_coords)
+        m = ui.leaflet(center=center, zoom=13, draw_control=False).classes('h-96 w-full')
         m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
 
     else:
@@ -88,6 +91,27 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=True).classes('h-96 w-full')
         for coords in polygons:
             m.generic_layer(name='polygon', args=[coords, {'color': 'red', 'weight': 1}])
+
+        def handle_draw(e: events.GenericEventArguments):
+            coords = e.args['layer']['_latlngs']
+            session = Session()
+            try:
+                field = Field(
+                    user_id=ui.page.user_id,
+                    name=f"Поле {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
+                    coordinates=json.dumps(coords),
+                    created_at=datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                )
+                session.add(field)
+                session.commit()
+                ui.notify('Полигон успешно создан', color='positive')
+                ui.open('/fields')
+            except Exception as ex:
+                session.rollback()
+                ui.notify(f'Ошибка при создании полигона: {ex}', color='negative')
+            finally:
+                session.close()
+        m.on('draw:created', handle_draw)
 
     ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
