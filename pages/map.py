@@ -53,8 +53,8 @@ def show_leaflet_map(center, draw_control, polygon_coords=None, color='red', on_
     return m
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
-    if not getattr(ui.page, 'user_id', None):
-        return ui.open('/')
+    # if not getattr(ui.page, 'user_id', None):
+    #     return ui.open('/')
 
     polygon_coords = None
     field_found = True
