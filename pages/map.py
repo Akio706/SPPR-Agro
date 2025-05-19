@@ -169,7 +169,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 'remove': False,
             },
         }
-        m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=draw_control, hide_drawn_items=True).classes('h-96 w-full')
+        m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=draw_control).classes('h-96 w-full')
         def handle_draw(e: events.GenericEventArguments):
             options = {'color': 'red', 'weight': 1}
             m.generic_layer(name='polygon', args=[e.args['layer']['_latlngs'], options])
