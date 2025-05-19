@@ -90,7 +90,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             },
         }
         m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
-    elif action == "edit" and polygon_coords is not None:
+    elif action == "edit":
         center = get_polygon_center(polygon_coords) if polygon_coords and len(polygon_coords) >= 3 else (55.75, 37.62)
         draw_control = {
             'draw': {
@@ -135,7 +135,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             session.close()
         m.on('draw:created', handle_draw)
         m.on('draw:edited', handle_edit)
-    elif action == "select" and polygon_coords is not None:
+    elif action == "select":
         center = get_polygon_center(polygon_coords) if polygon_coords and len(polygon_coords) >= 3 else (55.75, 37.62)
         draw_control = {
             'draw': {
@@ -198,9 +198,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                     ui.button('Отмена', on_click=dialog.close).props('color=negative')
             dialog.open()
         m.on('draw:created', handle_draw)
-
-    else:
-        ui.label('Некорректный режим карты')
 
     ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
