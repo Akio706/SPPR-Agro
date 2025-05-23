@@ -173,10 +173,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             },
         }
         m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=draw_control).classes('h-96 w-full')
-        m.tile_layer(
-            'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png',
-            '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-        )
+        m.tile_layer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
         def handle_draw(e: events.GenericEventArguments):
             options = {'color': 'red', 'weight': 1}
             m.generic_layer(name='polygon', args=[e.args['layer']['_latlngs'], options])
