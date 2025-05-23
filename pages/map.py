@@ -53,6 +53,9 @@ def show_leaflet_map(center, draw_control, polygon_coords=None, color='red', on_
     return m
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
+    ui.add_head_html('<link rel="stylesheet" href="/static/leaflet.css">')
+    ui.add_head_html('<script src="/static/leaflet.js"></script>')
+    ui.add_head_html('<script src="/static/leaflet.draw.js"></script>')
     # if not getattr(ui.page, 'user_id', None):
     #     return ui.open('/')
 
