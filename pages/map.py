@@ -2,6 +2,7 @@ from nicegui import ui, events
 from db import Session, Field
 import json
 from datetime import datetime
+import psycopg2
 
 def normalize_coords(coords):
     if not coords or not isinstance(coords, list):
@@ -49,6 +50,30 @@ def show_all_polygons(m, user_id):
                 m.generic_layer(name=f'polygon_{field.id}', args=[coords, {'color': 'blue', 'weight': 2}])
         except Exception:
             continue
+
+def get_zones_regions_polygons():
+    # Подключение к базе Postgres/PostGIS напрямую через psycopg2
+    import os
+    conn = psycopg2.connect(
+        dbname=os.getenv('POSTGRES_DB', 'postgres'),
+        user=os.getenv('POSTGRES_USER', 'postgres'),
+        password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
+        host=os.getenv('POSTGRES_HOST', 'localhost'),
+        port=os.getenv('POSTGRES_PORT', '5432'),
+    )
+    cur = conn.cursor()
+    cur.execute("SELECT gid, ST_AsGeoJSON(wkb_geometry) FROM zones_regions LIMIT 100;")
+    result = []
+    for gid, geojson in cur.fetchall():
+        if geojson:
+            gj = json.loads(geojson)
+            # Leaflet ожидает массив координат [lat, lng], а GeoJSON — [lng, lat]
+            coords = gj['coordinates'][0]
+            coords_latlng = [[c[1], c[0]] for c in coords]
+            result.append({'gid': gid, 'coords': coords_latlng})
+    cur.close()
+    conn.close()
+    return result
 
 def map_page(action: str = None, fields: str = None, field_id: str = None):
     user_id = getattr(ui.page, 'user_id', None)
@@ -191,5 +216,12 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     # --- Если ничего не выбрано, просто карта ---
     ui.label('Выберите действие: создать или редактировать поле').classes('text-h6 q-mb-md')
     ui.button('Назад', on_click=lambda: ui.navigate.to('/fields')).classes('mt-4')
+
+    def draw_zones_regions_layer(m):
+        for poly in get_zones_regions_polygons():
+            m.generic_layer(name=f'zones_{poly["gid"]}', args=[poly['coords'], {'color': 'green', 'weight': 1, 'opacity': 0.5}])
+
+    # В каждом режиме после создания карты m:
+    # draw_zones_regions_layer(m)
 
 ui.page('/map')(map_page)

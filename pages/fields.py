@@ -5,6 +5,7 @@ from datetime import datetime
 import csv
 from pages.yields import yields_page
 from pages.climat import climat_page
+import psycopg2
 
 def fields_page():
     if not getattr(ui.page, 'user_id', None):
@@ -93,7 +94,6 @@ def fields_page():
             latlngs = coords[0]
             lat = sum(p['lat'] for p in latlngs) / len(latlngs)
             lng = sum(p['lng'] for p in latlngs) / len(latlngs)
-            # Здесь можно добавить получение параметров почвы через ArcGIS, если нужно
             fieldnames = [
                 'id', 'name', 'created_at', 'coordinates', 'group', 'notes', 'area', 'soil_type', 'soil_ph', 'humus_content', 'soil_texture', 'elevation', 'slope', 'aspect'
             ]
@@ -120,6 +120,23 @@ def fields_page():
             ui.download(filename)
             ui.notify(f'Параметры поля {field_id} выгружены в {filename}', color='positive')
         ui.button('Выгрузить параметры по ID (CSV)', on_click=export_params_by_id).props('color=secondary')
+
+        def export_zones_to_csv():
+            filename = 'zones_regions.csv'
+            conn = psycopg2.connect(dbname='postgres', user='postgres', password='postgres', host='localhost', port='5432')
+            cur = conn.cursor()
+            cur.execute("SELECT gid, ST_AsGeoJSON(wkb_geometry) FROM zones_regions LIMIT 1000;")
+            fieldnames = ['gid', 'geojson']
+            with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                writer.writeheader()
+                for gid, geojson in cur.fetchall():
+                    writer.writerow({'gid': gid, 'geojson': geojson})
+            cur.close()
+            conn.close()
+            ui.download(filename)
+            ui.notify('Зоны выгружены в zones_regions.csv', color='positive')
+        ui.button('Выгрузить зоны (CSV)', on_click=export_zones_to_csv).props('color=secondary')
 
     # Кнопка "Удалить поле по ID"
     with ui.row().classes('mt-2'):
