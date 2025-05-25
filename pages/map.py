@@ -157,10 +157,16 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             if coords and len(coords) >= 3:
                 m.generic_layer(name='polygon', args=[coords, options])
             edited_coords = {'value': coords}
-            def on_edit(e):
-                edited_coords['value'] = e.args['layer']['_latlngs']
+            def on_draw_edited(e):
+                layers = e.args.get('layers', [])
+                if layers:
+                    # В NiceGUI обычно e.args['layers'] — список объектов с ключом 'layer', где 'layer' содержит '_latlngs'
+                    for lyr in layers:
+                        if 'layer' in lyr and '_latlngs' in lyr['layer']:
+                            edited_coords['value'] = lyr['layer']['_latlngs']
+                            break
             if action == 'edit':
-                m.on('layer:edit', on_edit)
+                m.on('draw:edited', on_draw_edited)
                 def save_changes():
                     if not name_input.value:
                         ui.notify('Введите название поля', color='warning')
