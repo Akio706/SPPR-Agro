@@ -8,7 +8,7 @@ from pages.climat import climat_page
 
 def fields_page():
     if not getattr(ui.page, 'user_id', None):
-        return ui.open('/')
+        return ui.navigate.to('/')
     selected = []
 
     # --- Горизонтальная навигация со ссылками на страницы ---
@@ -24,18 +24,18 @@ def fields_page():
         ui.page.user_id = None
         ui.page.user_role = None
         ui.notify('Вы вышли из аккаунта', type='positive')
-        ui.open('/')
+        ui.navigate.to('/')
     ui.button('Выйти', on_click=logout).classes('absolute top-4 right-4 z-50')
 
     # Кнопка "Создать поле"
-    ui.button('Создать поле', on_click=lambda: ui.open('/map?action=create')).props('color=positive').classes('mt-4')
+    ui.button('Создать поле', on_click=lambda: ui.navigate.to('/map?action=create')).props('color=positive').classes('mt-4')
 
     # Кнопка "Назад"
     ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
 
     # Таблица с кнопкой "Редактировать" в каждой строке
     def edit_field(field_id):
-        ui.open(f'/map?action=edit&fields={field_id}')
+        ui.navigate.to(f'/map?action=edit&fields={field_id}')
 
     columns = [
         {'name': 'id', 'label': 'ID', 'field': 'id', 'align': 'left'},
@@ -74,7 +74,7 @@ def fields_page():
             except (TypeError, ValueError):
                 ui.notify('Введите корректный ID', color='warning')
                 return
-            ui.open(f'/map?action=edit&fields={field_id}')
+            ui.navigate.to(f'/map?action=edit&fields={field_id}')
         ui.button('Редактировать по ID', on_click=edit_by_id).props('color=primary')
         def export_params_by_id():
             try:
@@ -140,7 +140,7 @@ def fields_page():
             session.commit()
             session.close()
             ui.notify(f'Поле с id={field_id} удалено', color='positive')
-            ui.open('/fields')
+            ui.navigate.to('/fields')
         ui.button('Удалить по id', on_click=delete_by_id).props('color=negative')
 
     # Кнопка "Показать поле по ID"
@@ -152,7 +152,7 @@ def fields_page():
             except (TypeError, ValueError):
                 ui.notify('Введите корректный ID', color='warning')
                 return
-            ui.open(f'/map?action=select&fields={field_id}')
+            ui.navigate.to(f'/map?action=select&fields={field_id}')
         ui.button('Показать полигон на карте по id', on_click=show_by_id).props('color=primary')
 
 def delete_field(field_id, user_id):

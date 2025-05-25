@@ -11,7 +11,7 @@ def main_page():
             ui.page.user_id = user['user_id']
             ui.page.user_role = user['role']
             ui.notify(f'Добро пожаловать, {username}!', type='positive')
-            ui.open('/fields')
+            ui.navigate.to('/fields')
         else:
             ui.notify('Неверное имя пользователя или пароль', type='negative')
 

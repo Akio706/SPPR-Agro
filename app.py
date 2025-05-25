@@ -2,7 +2,6 @@ from nicegui import app, ui
 from db import initialize_db, Base, engine
 
 # Эта строка обязательно должна быть до ui.run()
-app.add_static_files('/static', 'static')
 
 # Ваш роутинг:
 from pages.main import main_page
