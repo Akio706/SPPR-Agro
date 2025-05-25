@@ -60,7 +60,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     #     return ui.open('/')
 
     polygon_coords = None
-    field_found = True
+    field = None
     if fields:
         session = Session()
         field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
@@ -71,33 +71,13 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             if polygon_coords and isinstance(raw_coords, list) and isinstance(raw_coords[0], dict):
                 field.coordinates = json.dumps(polygon_coords)
                 session.commit()
-        else:
-            field_found = False
         session.close()
 
-    if (action in ("edit", "select")) and not field_found:
-        ui.label('Поле не найдено').classes('text-h6 q-mb-md')
-        center = (55.75, 37.62)
-        draw_control = {
-            'draw': {
-                'polygon': True,
-                'marker': False,
-                'circle': False,
-                'rectangle': False,
-                'polyline': False,
-                'circlemarker': False,
-            },
-            'edit': {
-                'edit': action == 'edit',
-                'remove': False,
-            },
-        }
-        m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
-    elif action == "edit":
+    if action in ("edit", "select") and field:
         center = get_polygon_center(polygon_coords) if polygon_coords and len(polygon_coords) >= 3 else (55.75, 37.62)
         draw_control = {
             'draw': {
-                'polygon': True,
+                'polygon': action == "edit",
                 'marker': False,
                 'circle': False,
                 'rectangle': False,
@@ -105,58 +85,60 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 'circlemarker': False,
             },
             'edit': {
-                'edit': True,
+                'edit': action == "edit",
                 'remove': False,
             },
         }
-        m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
+        m = ui.leaflet(center=center, zoom=13, draw_control=draw_control, hide_drawn_items=True).classes('h-96 w-full')
+        m.tile_layer(url_template="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")
         if polygon_coords and len(polygon_coords) >= 3:
-            m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red', 'weight': 2}])
-        def handle_draw(e: events.GenericEventArguments):
-            coords = normalize_coords(e.args['layer']['_latlngs'])
-            session = Session()
-            field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
-            if field:
-                field.coordinates = json.dumps(coords)
-                field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                session.commit()
-                ui.notify('Полигон успешно сохранён', color='positive')
-            else:
-                ui.notify('Поле не найдено', color='negative')
-            session.close()
-        def handle_edit(e: events.GenericEventArguments):
-            coords = normalize_coords(e.args['layers'][0]['_latlngs'])
-            session = Session()
-            field = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
-            if field:
-                field.coordinates = json.dumps(coords)
-                field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                session.commit()
-                ui.notify('Полигон успешно обновлён', color='positive')
-            else:
-                ui.notify('Поле не найдено', color='negative')
-            session.close()
-        m.on('draw:created', handle_draw)
-        m.on('draw:edited', handle_edit)
-    elif action == "select":
-        center = get_polygon_center(polygon_coords) if polygon_coords and len(polygon_coords) >= 3 else (55.75, 37.62)
-        draw_control = {
-            'draw': {
-                'polygon': False,
-                'marker': False,
-                'circle': False,
-                'rectangle': False,
-                'polyline': False,
-                'circlemarker': False,
-            },
-            'edit': {
-                'edit': False,
-                'remove': False,
-            },
-        }
-        m = ui.leaflet(center=center, zoom=13, draw_control=draw_control).classes('h-96 w-full')
-        if polygon_coords and len(polygon_coords) >= 3:
-            m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'blue', 'weight': 2}])
+            m.generic_layer(name='polygon', args=[polygon_coords, {'color': 'red' if action=="edit" else 'blue', 'weight': 2}])
+        if action == "edit":
+            def handle_draw(e: events.GenericEventArguments):
+                coords = normalize_coords(e.args['layer']['_latlngs'])
+                session = Session()
+                f = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
+                if f:
+                    f.coordinates = json.dumps(coords)
+                    f.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    session.commit()
+                    ui.notify('Полигон успешно сохранён', color='positive')
+                else:
+                    ui.notify('Поле не найдено', color='negative')
+                session.close()
+            def handle_edit(e: events.GenericEventArguments):
+                coords = normalize_coords(e.args['layers'][0]['_latlngs'])
+                session = Session()
+                f = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
+                if f:
+                    f.coordinates = json.dumps(coords)
+                    f.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    session.commit()
+                    ui.notify('Полигон успешно обновлён', color='positive')
+                else:
+                    ui.notify('Поле не найдено', color='negative')
+                session.close()
+            m.on('draw:created', handle_draw)
+            m.on('draw:edited', handle_edit)
+        # Форма редактирования параметров поля
+        with ui.form().classes('q-gutter-md q-mt-md') as form:
+            name = ui.input('Название', value=field.name).classes('w-full')
+            area = ui.input('Площадь', value=str(field.area) if field.area else '').props('type=number').classes('w-full')
+            soil_type = ui.input('Тип почвы', value=field.soil_type or '').classes('w-full')
+            notes = ui.input('Заметки', value=field.notes or '').classes('w-full')
+            def save_params():
+                session = Session()
+                f = session.query(Field).filter(Field.id == int(fields), Field.user_id == ui.page.user_id).first()
+                if f:
+                    f.name = name.value
+                    f.area = float(area.value) if area.value else None
+                    f.soil_type = soil_type.value
+                    f.notes = notes.value
+                    f.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    session.commit()
+                    ui.notify('Параметры поля сохранены', color='positive')
+                session.close()
+            ui.button('Сохранить параметры', on_click=save_params).props('color=primary')
     elif action == "create":
         draw_control = {
             'draw': {
@@ -172,12 +154,37 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 'remove': False,
             },
         }
-        m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=draw_control).classes('h-96 w-full')
-        m.tile_layer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png')
+        m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=draw_control, hide_drawn_items=True).classes('h-96 w-full')
+        m.tile_layer(url_template="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")
         def handle_draw(e: events.GenericEventArguments):
             options = {'color': 'red', 'weight': 1}
             m.generic_layer(name='polygon', args=[e.args['layer']['_latlngs'], options])
         m.on('draw:created', handle_draw)
-
+    else:
+        ui.label('Поле не найдено или не выбрано').classes('text-h6 q-mb-md')
     ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.button('Назад к полям', on_click=lambda: ui.open('/fields')).classes('mt-4')
+
+def handle_draw(e: events.GenericEventArguments):
+    options = {'color': 'red', 'weight': 1}
+    m.generic_layer(name='polygon', args=[e.args['layer']['_latlngs'], options])
+
+draw_control = {
+    'draw': {
+        'polygon': True,
+        'marker': False,
+        'circle': False,
+        'rectangle': False,
+        'polyline': False,
+        'circlemarker': False,
+    },
+    'edit': {
+        'edit': False,
+        'remove': False,
+    },
+}
+m = ui.leaflet(center=(51.5, 0), zoom=13, draw_control=draw_control, hide_drawn_items=True)
+m.tile_layer(url_template="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png")
+m.on('draw:created', handle_draw)
+
+ui.run()
