@@ -61,10 +61,19 @@ def fields_page():
         row_key='id',
         selection='single',
     ).classes('w-full')
-    # Добавляем кнопки "Редактировать" после создания таблицы
+    # Добавляем выпадающее меню с действиями для каждой строки
     for i, row in enumerate(table_rows):
         with table.add_slot('body-cell-edit', row['id']):
-            ui.button('Редактировать', on_click=lambda r=row: edit_field(r['id'])).props('color=primary')
+            def go_edit(r=row):
+                ui.navigate.to(f'/map?action=edit&fields={r["id"]}')
+            def go_yield(r=row):
+                ui.navigate.to(f'/yields/{r["id"]}')
+            def go_show(r=row):
+                ui.navigate.to(f'/map?action=select&fields={r["id"]}')
+            with ui.row().classes('q-gutter-sm'):
+                ui.button('Редактировать', on_click=lambda r=row: go_edit(r)).props('color=primary flat')
+                ui.button('Урожайность', on_click=lambda r=row: go_yield(r)).props('color=secondary flat')
+                ui.button('Показать', on_click=lambda r=row: go_show(r)).props('color=positive flat')
 
     # --- Управление по ID ---
     with ui.row().classes('mt-2'):

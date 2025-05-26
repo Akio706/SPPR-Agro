@@ -7,7 +7,7 @@ from db import initialize_db, Base, engine
 from pages.main import main_page
 from pages.fields import fields_page
 from pages.map import map_page
-from pages.yields import yields_page
+from pages.yields import yields_page, yields_field_page
 from pages.climat import climat_page
 
 Base.metadata.create_all(bind=engine)
@@ -33,5 +33,9 @@ def _():
 @ui.page('/climat')
 def _():
     climat_page()
+
+@ui.page('/yields/<field_id>')
+def _(field_id):
+    yields_field_page(int(field_id))
 
 ui.run()

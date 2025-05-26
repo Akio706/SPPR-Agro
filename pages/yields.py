@@ -4,6 +4,9 @@ import requests
 import json
 from utils import get_arcgis_soil_params
 import csv
+import geopandas as gpd
+from shapely.geometry import Polygon, shape
+from shapely.ops import unary_union
 
 def get_weather_data(lat, lon):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation,wind_speed_10m&forecast_days=1"
@@ -140,4 +143,54 @@ def yields_page():
     ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.button('Рассчитать урожайность', on_click=calculate_yield).classes('q-mt-md')
     ui.button('Выгрузить результат в CSV', on_click=export_csv).classes('q-mt-md')
-    ui.button('Средняя урожайность по всем полям', on_click=avg_yield_all_fields).classes('q-mt-md') 
+    ui.button('Средняя урожайность по всем полям', on_click=avg_yield_all_fields).classes('q-mt-md')
+
+def yields_field_page(field_id: int):
+    ui.label(f'Урожайность для поля {field_id}').classes('text-h4 q-mb-md')
+    session = Session()
+    field = session.query(Field).filter(Field.id == field_id).first()
+    session.close()
+    if not field:
+        ui.notify('Поле не найдено', color='negative')
+        return
+    coords = json.loads(field.coordinates)
+    coords_latlng = [[p['lat'], p['lng']] for p in coords[0]]
+    # Центр поля для климата
+    lat_center = sum(p['lat'] for p in coords[0]) / len(coords[0])
+    lng_center = sum(p['lng'] for p in coords[0]) / len(coords[0])
+    # Получаем климат
+    avg_temp, avg_prec, avg_wind = get_weather_data(lat_center, lng_center)
+    climate_rows = [{
+        'Температура (°C)': avg_temp,
+        'Осадки (мм)': avg_prec,
+        'Ветер (м/с)': avg_wind
+    }]
+    # Загружаем зоны
+    gdf = gpd.read_file('zones_regions.gpkg')
+    field_poly = Polygon([(p['lng'], p['lat']) for p in coords[0]])
+    # Фильтруем зоны, которые пересекают поле
+    intersected = gdf[gdf.geometry.intersects(field_poly)]
+    zone_columns = [col for col in gdf.columns if col != 'geometry']
+    zone_rows = [row[zone_columns] for _, row in intersected.iterrows()]
+    # UI
+    with ui.row().classes('w-full'):
+        with ui.column().classes('w-2/3'):
+            m = ui.leaflet(center=[lat_center, lng_center], zoom=13).classes('h-96 w-full')
+            m.generic_layer(name='polygon', args=[coords_latlng, {'color': 'red', 'weight': 2}])
+            # Зоны
+            for _, row in intersected.iterrows():
+                if row.geometry.geom_type == 'Polygon':
+                    coords = list(row.geometry.exterior.coords)
+                    coords_latlng = [[lat, lng] for lng, lat in coords]
+                    m.generic_layer(name=f'zone_{row.get("gid", "")}', args=[coords_latlng, {'color': 'green', 'weight': 1, 'opacity': 0.5}])
+        with ui.column().classes('w-1/3'):
+            ui.label('Климатические данные').classes('text-h6')
+            ui.table(columns=[{'name': k, 'label': k, 'field': k} for k in climate_rows[0].keys()], rows=climate_rows).classes('mb-4')
+            ui.label('Зоны, пересекающие поле').classes('text-h6')
+            if zone_rows:
+                ui.table(columns=[{'name': c, 'label': c, 'field': c} for c in zone_columns], rows=[dict(zip(zone_columns, r)) for r in zone_rows])
+            else:
+                ui.label('Нет пересечений с зонами').classes('text-negative')
+    ui.button('Назад', on_click=lambda: ui.navigate.to("/fields")).classes('mt-4')
+
+ui.page('/yields/<field_id>')(lambda field_id: yields_field_page(int(field_id))) 
