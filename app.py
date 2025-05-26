@@ -2,12 +2,12 @@ from nicegui import app, ui
 from db import initialize_db, Base, engine
 
 # Эта строка обязательно должна быть до ui.run()
+app.add_static_files('/static', 'static')
 
-# Ваш роутинг:
 from pages.main import main_page
 from pages.fields import fields_page
 from pages.map import map_page
-from pages.yields import yields_page, yields_field_page
+from pages.yields import yields_page, field_climate_page
 from pages.climat import climat_page
 
 Base.metadata.create_all(bind=engine)
@@ -34,8 +34,8 @@ def _():
 def _():
     climat_page()
 
-@ui.page('/yields/<field_id>')
-def _(field_id):
-    yields_field_page(int(field_id))
+@ui.page('/field_climate')
+def _(field_id: int = 0):
+    field_climate_page(field_id)
 
 ui.run()

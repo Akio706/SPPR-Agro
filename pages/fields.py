@@ -67,11 +67,11 @@ def fields_page():
             def go_edit(r=row):
                 ui.navigate.to(f'/map?action=edit&fields={r["id"]}')
             def go_yield(r=row):
-                ui.navigate.to(f'/yields/{r["id"]}')
+                ui.navigate.to(f'/field_climate?field_id={r["id"]}')
             def go_show(r=row):
-                ui.navigate.to(f'/map?action=select&fields={r["id"]}')
+                ui.navigate.to(f'/field_climate?field_id={r["id"]}')
             with ui.row().classes('q-gutter-sm'):
-                ui.button('Редактировать', on_click=lambda r=row: go_edit(r)).props('color=primary flat')
+                ui.button('Редактировать').props('color=primary flat disabled')
                 ui.button('Урожайность', on_click=lambda r=row: go_yield(r)).props('color=secondary flat')
                 ui.button('Показать', on_click=lambda r=row: go_show(r)).props('color=positive flat')
 

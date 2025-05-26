@@ -7,6 +7,9 @@ import csv
 import geopandas as gpd
 from shapely.geometry import Polygon, shape
 from shapely.ops import unary_union
+from datetime import datetime
+import openpyxl
+from openpyxl import Workbook
 
 def get_weather_data(lat, lon):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation,wind_speed_10m&forecast_days=1"
@@ -140,13 +143,53 @@ def yields_page():
         else:
             ui.notify('Нет данных для расчёта средней урожайности')
 
+    def export_excel():
+        field_id = selected_field.value
+        if not field_id:
+            ui.notify('Выберите поле', color='warning')
+            return
+        field_id = int(field_id)
+        session = Session()
+        field = session.query(Field).filter(Field.id == field_id).first()
+        session.close()
+        if not field:
+            ui.notify('Поле не найдено', color='negative')
+            return
+        filename = f'field_{field_id}_info.xlsx'
+        wb = Workbook()
+        ws1 = wb.active
+        ws1.title = 'Параметры поля'
+        headers1 = ['ID', 'Название', 'Площадь', 'Тип почвы', 'Сорт', 'Заметка', 'Дата создания', 'Дата обновления']
+        ws1.append(headers1)
+        ws1.append([
+            field.id,
+            field.name,
+            field.area,
+            field.soil_type,
+            field.group,
+            getattr(field, 'notes', ''),
+            field.created_at,
+            field.last_updated
+        ])
+        # Лист с результатами расчёта урожайности
+        ws2 = wb.create_sheet('Результаты расчёта')
+        if export_data:
+            ws2.append(list(export_data[0].keys()))
+            for row in export_data:
+                ws2.append(list(row.values()))
+        else:
+            ws2.append(['Нет данных для экспорта'])
+        wb.save(filename)
+        ui.download(filename)
+        ui.notify(f'Информация о поле и результаты расчёта выгружены в {filename}', color='positive')
+
     ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
     ui.button('Рассчитать урожайность', on_click=calculate_yield).classes('q-mt-md')
     ui.button('Выгрузить результат в CSV', on_click=export_csv).classes('q-mt-md')
     ui.button('Средняя урожайность по всем полям', on_click=avg_yield_all_fields).classes('q-mt-md')
+    ui.button('Выгрузить информацию о поле в Excel', on_click=export_excel).classes('q-mt-md')
 
-def yields_field_page(field_id: int):
-    ui.label(f'Урожайность для поля {field_id}').classes('text-h4 q-mb-md')
+def field_climate_page(field_id: int):
     session = Session()
     field = session.query(Field).filter(Field.id == field_id).first()
     session.close()
@@ -155,42 +198,60 @@ def yields_field_page(field_id: int):
         return
     coords = json.loads(field.coordinates)
     coords_latlng = [[p['lat'], p['lng']] for p in coords[0]]
-    # Центр поля для климата
     lat_center = sum(p['lat'] for p in coords[0]) / len(coords[0])
     lng_center = sum(p['lng'] for p in coords[0]) / len(coords[0])
-    # Получаем климат
-    avg_temp, avg_prec, avg_wind = get_weather_data(lat_center, lng_center)
-    climate_rows = [{
-        'Температура (°C)': avg_temp,
-        'Осадки (мм)': avg_prec,
-        'Ветер (м/с)': avg_wind
-    }]
-    # Загружаем зоны
+
+    # Получаем тип почвы из базы зон по пересечению
     gdf = gpd.read_file('zones_regions.gpkg')
     field_poly = Polygon([(p['lng'], p['lat']) for p in coords[0]])
-    # Фильтруем зоны, которые пересекают поле
     intersected = gdf[gdf.geometry.intersects(field_poly)]
-    zone_columns = [col for col in gdf.columns if col != 'geometry']
-    zone_rows = [row[zone_columns] for _, row in intersected.iterrows()]
-    # UI
+    all_soil_types = sorted(set(x for x in gdf['soil_legend_Descript'].dropna().unique().tolist() if x and x.strip()))
+    # Тип почвы по умолчанию всегда определяется по пересечению
+    if not intersected.empty:
+        soil_type_default = intersected.iloc[0]['soil_legend_Descript']
+    else:
+        soil_type_default = all_soil_types[0] if all_soil_types else ''
+    # Если пользователь уже выбирал тип почвы ранее, он будет выбран в select, но по умолчанию всегда пересечение
+    if field.soil_type and field.soil_type in all_soil_types:
+        soil_type_default = field.soil_type
+    if soil_type_default and soil_type_default not in all_soil_types:
+        all_soil_types = [soil_type_default] + all_soil_types
+    soil_type_state = {'value': soil_type_default}
+
+    # Состояния для редактирования
+    sort_state = {'value': field.group or ''}
+
+    # Вычисляем площадь поля (в гектарах)
+    poly = Polygon([(p['lng'], p['lat']) for p in coords[0]])
+    area_ha = poly.area * 111 * 111  # Грубо для EPSG:4326
+
+    # Список сортов
+    variety_options = ['Аннушка', 'Гордея', 'Луч', 'Золотая']
+    if not sort_state['value']:
+        sort_state['value'] = variety_options[0]
+    elif sort_state['value'] not in variety_options:
+        variety_options = [sort_state['value']] + variety_options
+
+    def save_changes():
+        session = Session()
+        f = session.query(Field).filter(Field.id == field_id).first()
+        if f:
+            f.soil_type = soil_type_state['value']
+            f.group = sort_state['value']
+            f.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            session.commit()
+            ui.notify('Данные сохранены', color='positive')
+        session.close()
+
     with ui.row().classes('w-full'):
         with ui.column().classes('w-2/3'):
             m = ui.leaflet(center=[lat_center, lng_center], zoom=13).classes('h-96 w-full')
             m.generic_layer(name='polygon', args=[coords_latlng, {'color': 'red', 'weight': 2}])
-            # Зоны
-            for _, row in intersected.iterrows():
-                if row.geometry.geom_type == 'Polygon':
-                    coords = list(row.geometry.exterior.coords)
-                    coords_latlng = [[lat, lng] for lng, lat in coords]
-                    m.generic_layer(name=f'zone_{row.get("gid", "")}', args=[coords_latlng, {'color': 'green', 'weight': 1, 'opacity': 0.5}])
         with ui.column().classes('w-1/3'):
-            ui.label('Климатические данные').classes('text-h6')
-            ui.table(columns=[{'name': k, 'label': k, 'field': k} for k in climate_rows[0].keys()], rows=climate_rows).classes('mb-4')
-            ui.label('Зоны, пересекающие поле').classes('text-h6')
-            if zone_rows:
-                ui.table(columns=[{'name': c, 'label': c, 'field': c} for c in zone_columns], rows=[dict(zip(zone_columns, r)) for r in zone_rows])
-            else:
-                ui.label('Нет пересечений с зонами').classes('text-negative')
-    ui.button('Назад', on_click=lambda: ui.navigate.to("/fields")).classes('mt-4')
-
-ui.page('/yields/<field_id>')(lambda field_id: yields_field_page(int(field_id))) 
+            ui.label('Информация о поле').classes('text-h6')
+            table_data = [
+                {'Параметр': 'Название поля', 'Значение': field.name},
+                {'Параметр': 'Площадь (га)', 'Значение': f'{area_ha:.2f}'},
+            ]
+            ui.table(columns=[{'name': 'Параметр', 'label': 'Параметр', 'field': 'Параметр'}, {'name': 'Значение', 'label': 'Значение', 'field': 'Значение'}], rows=table_data).classes('mb-4')
+    ui.button('Назад', on_click=lambda: ui.navigate.to("/fields")).classes('mt-4') 

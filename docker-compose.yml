@@ -15,7 +15,7 @@ networks:
     driver: bridge
 
 services:
-  frost-db:
+  frost_db:
     container_name: frost_db
     image: "kartoza/postgis:${FROST_DB_VERSION}"
     ports:
@@ -37,6 +37,8 @@ services:
       RUN_AS_ROOT: "true"
     volumes:
       - frost_db_data:/var/lib/postgresql/data
+      - ./init-db:/docker-entrypoint-initdb.d
+      - ./zones_regions.gpkg:/docker-entrypoint-initdb.d/zones_regions.gpkg
     restart: on-failure
     healthcheck:
       test: "PGPASSWORD=${FROST_DB_PASSWORD:?FROST_DB_PASSWORD not set} pg_isready -h 127.0.0.1 -U ${FROST_DB_USER:?FROST_DB_USER not set} -d ${FROST_DB_NAME:?FROST_DB_NAME not set}"
@@ -61,7 +63,7 @@ services:
     volumes:
       - pgadmin_data:/var/lib/pgadmin
     depends_on:
-      - frost-db
+      - frost_db
     entrypoint: /bin/sh -c "chmod 600 /pgpass; /entrypoint.sh;"
     user: root
     configs:
@@ -77,10 +79,11 @@ services:
     environment:
          DATABASE_URL: postgresql+psycopg2://postgres:postgres@frost_db:5432/frostdb
     depends_on:
-      - frost-db
+      - frost_db
     networks:
      - net
     restart: unless-stopped
+
 configs:
   pgpass:
     content: frost_db:5432:*:${FROST_DB_USER:?FROST_DB_USER not set}:${FROST_DB_PASSWORD:?FROST_DB_PASSWORD not set}
