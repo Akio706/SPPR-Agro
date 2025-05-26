@@ -119,25 +119,31 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=draw_control, hide_drawn_items=True).classes('h-96 w-full')
         options = {'color': 'red', 'weight': 1}
         drawn_coords = {'value': None}
-        async def handle_draw(e: events.GenericEventArguments):
+        def handle_draw(e: events.GenericEventArguments):
             coords = normalize_coords(e.args['layer']['_latlngs'])
             options = {'color': 'red', 'weight': 1}
             m.generic_layer(name='polygon', args=[coords, options])
-            await check_intersections(m, coords)
             drawn_coords['value'] = coords
             # Открываем диалог для ввода имени и заметки
             with ui.dialog() as dialog, ui.card():
                 name_input = ui.input('Название поля').classes('mb-2')
                 note_input = ui.input('Заметка').classes('mb-2')
                 def save():
-                    # Проверка площади
-                    poly = Polygon([(p['lng'], p['lat']) for p in coords[0]]) if isinstance(coords[0][0], dict) else Polygon([(p[1], p[0]) for p in coords[0]])
+                    # Гарантируем, что coords — список пар [lat, lng]
+                    if coords and isinstance(coords[0], list) and isinstance(coords[0][0], (float, int)):
+                        coords_for_poly = coords
+                    elif coords and isinstance(coords[0], (float, int)):
+                        coords_for_poly = [coords[i:i+2] for i in range(0, len(coords), 2)]
+                    else:
+                        ui.notify('Ошибка структуры координат', color='negative')
+                        return
+                    poly = Polygon([(lng, lat) for lat, lng in coords_for_poly])
                     area_ha = poly.area * 111 * 111  # Приблизительно, для EPSG:4326 (грубо)
                     if area_ha > 1000:
                         ui.notify('Площадь поля превышает 1000 га!', color='negative')
                         return
                     # Проверка на вхождение в soil-zones regions
-                    gdf = gpd.read_file('zones_regions.gpkg')
+                    gdf = gpd.read_file('soil_regions_full.gpkg')
                     intersects = gdf[gdf.geometry.intersects(poly)]
                     if intersects.empty:
                         ui.notify('Полигон вне границ soil-zones regions!', color='negative')
@@ -240,40 +246,4 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
     # В каждом режиме после создания карты m:
     # draw_zones_regions_layer(m)
 
-    async def check_intersections(m, coords):
-        try:
-            geometry = {
-                "type": "Polygon",
-                "coordinates": [[
-                    [point[1], point[0]] for point in coords
-                ]]
-            }
-            async with ui.run_javascript(
-                f'fetch("/api/check-intersection", {{'
-                f'method: "POST",'
-                f'headers: {{"Content-Type": "application/json"}},'
-                f'body: JSON.stringify({{geometry: {json.dumps(geometry)}}})'
-                f'}}).then(r => r.json())'
-            ) as response:
-                intersecting_zones = await response
-                for zone in intersecting_zones:
-                    zone_coords = [[p[1], p[0]] for p in zone['geometry']['coordinates'][0]]
-                    zone_layer = m.generic_layer(
-                        name=f'zone_{zone.get("id", "unknown")}',
-                        args=[zone_coords, {
-                            'color': 'red',
-                            'weight': 2,
-                            'fillOpacity': 0.3
-                        }]
-                    )
-                    zone_layer.bind_popup(
-                        f"<h3>Найдена зона</h3>"
-                        f"<p>ID: {zone.get('id', 'Не указан')}</p>"
-                        f"<p>Название: {zone.get('name', 'Не указано')}</p>"
-                    )
-        except Exception as e:
-            ui.notify(f'Ошибка при проверке пересечений: {str(e)}', color='negative')
-
-    # В обработчик handle_draw (и handle_edit, если нужно) добавляю вызов await check_intersections(m, coords)
-
-ui.page('/map')(map_page)
+    ui.page('/map')(map_page)

@@ -7,7 +7,7 @@ app.add_static_files('/static', 'static')
 from pages.main import main_page
 from pages.fields import fields_page
 from pages.map import map_page
-from pages.yields import yields_page, field_climate_page
+from pages.yields import show_yield_page, field_climate_page
 from pages.climat import climat_page
 
 Base.metadata.create_all(bind=engine)
@@ -27,8 +27,8 @@ def _(action: str = None, fields: str = None, field_id: str = None):
     map_page(action, fields, field_id)
 
 @ui.page('/yields')
-def _():
-    yields_page()
+def _(field_id: int = 0):
+    show_yield_page(field_id)
 
 @ui.page('/climat')
 def _():

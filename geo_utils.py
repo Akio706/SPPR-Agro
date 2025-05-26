@@ -8,7 +8,7 @@ def check_intersection(user_geometry):
         user_geom = shape(geojson['geometry'])
     else:
         user_geom = user_geometry
-    gdf = gpd.read_file('zones_regions.gpkg')
+    gdf = gpd.read_file('soil_regions_full.gpkg')
     intersected = gdf[gdf.geometry.intersects(user_geom)]
     result = []
     for _, row in intersected.iterrows():

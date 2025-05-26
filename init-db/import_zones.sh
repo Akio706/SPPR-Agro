@@ -14,7 +14,9 @@ done
 # Импортируем GPKG файл с помощью ogr2ogr
 ogr2ogr -f "PostgreSQL" \
   PG:"host=localhost user=$POSTGRES_USER dbname=$POSTGRES_DB password=$POSTGRES_PASSWORD" \
-  /docker-entrypoint-initdb.d/zones_regions.gpkg \
+  /docker-entrypoint-initdb.d/soil_regions_full.gpkg \
+  -nln "soil_regions_full" \
   -overwrite
+  
 
 echo "Импорт GPKG завершен" 

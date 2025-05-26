@@ -37,159 +37,7 @@ def fao_simple(area, temp, prec):
     # FAO простая: Урожай = площадь * (темп + осадки/10)
     return area * (temp + prec/10)
 
-def yields_page():
-    ui.label('Расчёт урожайности').classes('text-h4 q-mb-md')
-    session = Session()
-    fields = session.query(Field).all()
-    session.close()
-    field_options = [(f"{f.id}: {f.name}", str(f.id)) for f in fields]
-    selected_field = ui.select(field_options, label='Выберите поле по ID').classes('q-mb-md')
-    formula = ui.select([
-        ('Простая', 'simple'),
-        ('Додонов', 'dodonov'),
-        ('Монтей (FAO)', 'monteith'),
-        ('FAO простая', 'fao'),
-    ], value='simple', label='Формула расчёта').classes('q-mb-md')
-    result_label = ui.label('').classes('q-mt-md')
-    soil_label = ui.label('').classes('q-mt-md')
-    export_data = []
-
-    def calculate_yield():
-        field_id = selected_field.value
-        if not field_id:
-            ui.notify('Выберите поле', color='warning')
-            return
-        field_id = int(field_id)
-        session = Session()
-        field = session.query(Field).filter(Field.id == field_id).first()
-        session.close()
-        if not field:
-            ui.notify('Поле не найдено', color='negative')
-            return
-        coords = json.loads(field.coordinates)
-        latlng = coords[0][0] if coords and coords[0] else None
-        if not latlng:
-            ui.notify('Нет координат у поля', color='negative')
-            return
-        lat, lon = latlng['lat'], latlng['lng']
-        avg_temp, avg_prec, avg_wind = get_weather_data(lat, lon)
-        area = field.area if field.area else 1
-        if avg_temp is not None and avg_prec is not None:
-            if formula.value == 'dodonov':
-                yield_value = dodonov_formula(area, avg_temp, avg_prec, avg_wind or 0)
-                fstr = 'Додонов'
-            elif formula.value == 'monteith':
-                yield_value = monteith_formula(area, avg_temp, avg_prec)
-                fstr = 'Монтей (FAO)'
-            elif formula.value == 'fao':
-                yield_value = fao_simple(area, avg_temp, avg_prec)
-                fstr = 'FAO простая'
-            else:
-                yield_value = area * (avg_temp + avg_prec/10 - (avg_wind or 0)/10)
-                fstr = 'Простая'
-            result_label.text = f"Оценка урожайности ({fstr}): {yield_value:.2f} (площадь: {area} га, t={avg_temp:.1f}°C, осадки={avg_prec:.1f}мм, ветер={avg_wind:.1f}м/с)"
-            export_data.clear()
-            export_data.append({
-                'field_id': field_id,
-                'formula': fstr,
-                'area': area,
-                'temp': avg_temp,
-                'precip': avg_prec,
-                'wind': avg_wind,
-                'yield': yield_value
-            })
-        else:
-            result_label.text = "Не удалось получить климатические данные."
-        # Soil info
-        soil = get_arcgis_soil_params(lat, lon)
-        if soil:
-            soil_label.text = f"Почва: {soil.get('MUSYM', '')} | {soil.get('MUSYM_DESC', '')} | PH: {soil.get('PHH2O', 'нет данных')}"
-        else:
-            soil_label.text = "Почвенные параметры не найдены."
-
-    def export_csv():
-        if not export_data:
-            ui.notify('Нет данных для экспорта', color='warning')
-            return
-        filename = 'yield_results.csv'
-        with open(filename, 'w', newline='', encoding='utf-8') as csvfile:
-            writer = csv.DictWriter(csvfile, fieldnames=export_data[0].keys())
-            writer.writeheader()
-            for row in export_data:
-                writer.writerow(row)
-        ui.download(filename)
-        ui.notify(f'Данные выгружены в {filename}', color='positive')
-
-    def avg_yield_all_fields():
-        session = Session()
-        fields = session.query(Field).all()
-        session.close()
-        total_yield = 0
-        count = 0
-        for field in fields:
-            coords = json.loads(field.coordinates)
-            latlng = coords[0][0] if coords and coords[0] else None
-            if not latlng:
-                continue
-            lat, lon = latlng['lat'], latlng['lng']
-            avg_temp, avg_prec, avg_wind = get_weather_data(lat, lon)
-            area = field.area if field.area else 1
-            if avg_temp is not None and avg_prec is not None:
-                y = area * (avg_temp + avg_prec/10 - (avg_wind or 0)/10)
-                total_yield += y
-                count += 1
-        if count:
-            ui.notify(f'Средняя урожайность по всем полям: {total_yield/count:.2f}')
-        else:
-            ui.notify('Нет данных для расчёта средней урожайности')
-
-    def export_excel():
-        field_id = selected_field.value
-        if not field_id:
-            ui.notify('Выберите поле', color='warning')
-            return
-        field_id = int(field_id)
-        session = Session()
-        field = session.query(Field).filter(Field.id == field_id).first()
-        session.close()
-        if not field:
-            ui.notify('Поле не найдено', color='negative')
-            return
-        filename = f'field_{field_id}_info.xlsx'
-        wb = Workbook()
-        ws1 = wb.active
-        ws1.title = 'Параметры поля'
-        headers1 = ['ID', 'Название', 'Площадь', 'Тип почвы', 'Сорт', 'Заметка', 'Дата создания', 'Дата обновления']
-        ws1.append(headers1)
-        ws1.append([
-            field.id,
-            field.name,
-            field.area,
-            field.soil_type,
-            field.group,
-            getattr(field, 'notes', ''),
-            field.created_at,
-            field.last_updated
-        ])
-        # Лист с результатами расчёта урожайности
-        ws2 = wb.create_sheet('Результаты расчёта')
-        if export_data:
-            ws2.append(list(export_data[0].keys()))
-            for row in export_data:
-                ws2.append(list(row.values()))
-        else:
-            ws2.append(['Нет данных для экспорта'])
-        wb.save(filename)
-        ui.download(filename)
-        ui.notify(f'Информация о поле и результаты расчёта выгружены в {filename}', color='positive')
-
-    ui.button('Назад', on_click=lambda: ui.run_javascript('window.history.back()')).props('flat color=primary').classes('mb-4')
-    ui.button('Рассчитать урожайность', on_click=calculate_yield).classes('q-mt-md')
-    ui.button('Выгрузить результат в CSV', on_click=export_csv).classes('q-mt-md')
-    ui.button('Средняя урожайность по всем полям', on_click=avg_yield_all_fields).classes('q-mt-md')
-    ui.button('Выгрузить информацию о поле в Excel', on_click=export_excel).classes('q-mt-md')
-
-def field_climate_page(field_id: int):
+def show_yield_page(field_id: int):
     session = Session()
     field = session.query(Field).filter(Field.id == field_id).first()
     session.close()
@@ -197,35 +45,135 @@ def field_climate_page(field_id: int):
         ui.notify('Поле не найдено', color='negative')
         return
     coords = json.loads(field.coordinates)
-    coords_latlng = [[p['lat'], p['lng']] for p in coords[0]]
-    lat_center = sum(p['lat'] for p in coords[0]) / len(coords[0])
-    lng_center = sum(p['lng'] for p in coords[0]) / len(coords[0])
-
-    # Получаем тип почвы из базы зон по пересечению
-    gdf = gpd.read_file('zones_regions.gpkg')
-    field_poly = Polygon([(p['lng'], p['lat']) for p in coords[0]])
-    intersected = gdf[gdf.geometry.intersects(field_poly)]
+    coords_latlng = get_field_coords(coords)
+    if not coords_latlng or len(coords_latlng) < 3:
+        ui.notify('Нет координат у поля', color='negative')
+            return
+    poly = Polygon([(p[1], p[0]) for p in coords_latlng])
+    gdf = gpd.read_file('soil_regions_full.gpkg')
+    intersected = gdf[gdf.geometry.intersects(poly)]
     all_soil_types = sorted(set(x for x in gdf['soil_legend_Descript'].dropna().unique().tolist() if x and x.strip()))
-    # Тип почвы по умолчанию всегда определяется по пересечению
     if not intersected.empty:
         soil_type_default = intersected.iloc[0]['soil_legend_Descript']
     else:
         soil_type_default = all_soil_types[0] if all_soil_types else ''
-    # Если пользователь уже выбирал тип почвы ранее, он будет выбран в select, но по умолчанию всегда пересечение
+    if field.soil_type and field.soil_type in all_soil_types:
+        soil_type_default = field.soil_type
+    if soil_type_default and soil_type_default not in all_soil_types:
+        all_soil_types.insert(0, soil_type_default)
+    soil_type_state = {'value': soil_type_default}
+    variety_options = ['Аннушка', 'Гордея', 'Луч', 'Золотая']
+    sort_state = {'value': field.group or variety_options[0]}
+
+    def on_soil_change(e):
+        soil_type_state['value'] = e.value
+    def on_sort_change(e):
+        sort_state['value'] = e.value
+
+    area_ha = poly.area * 111 * 111 if poly else 0  # Грубо для EPSG:4326
+
+    with ui.row().classes('w-full'):
+        with ui.column().classes('w-2/3'):
+            m = ui.leaflet(center=[sum(p[0] for p in coords_latlng) / len(coords_latlng), sum(p[1] for p in coords_latlng) / len(coords_latlng)], zoom=13).classes('h-96 w-full')
+            if coords_latlng:
+                m.generic_layer(name='polygon', args=[coords_latlng, {'color': 'red', 'weight': 2}])
+        with ui.column().classes('w-1/3'):
+            ui.label('Информация о поле').classes('text-h6')
+            table_data = [
+                {'Параметр': 'Название поля', 'Значение': field.name},
+                {'Параметр': 'Площадь (га)', 'Значение': f'{area_ha:.2f}'},
+                {'Параметр': 'Тип почвы', 'Значение': ''},
+                {'Параметр': 'Сорт', 'Значение': ''},
+                {'Параметр': 'pH', 'Значение': field.soil_ph or ''},
+                {'Параметр': 'Гумус', 'Значение': field.humus_content or ''},
+                {'Параметр': 'Текстура', 'Значение': field.soil_texture or ''},
+                {'Параметр': 'Высота', 'Значение': field.elevation or ''},
+                {'Параметр': 'Уклон', 'Значение': field.slope or ''},
+                {'Параметр': 'Экспозиция', 'Значение': field.aspect or ''},
+                {'Параметр': 'Заметки', 'Значение': field.notes or ''},
+            ]
+            ui.table(columns=[{'name': 'Параметр', 'label': 'Параметр', 'field': 'Параметр'}, {'name': 'Значение', 'label': 'Значение', 'field': 'Значение'}], rows=table_data).classes('mb-4')
+            ui.select(all_soil_types, value=soil_type_state['value'], label='Тип почвы', on_change=on_soil_change).classes('q-mb-md')
+            ui.select(variety_options, value=sort_state['value'], label='Сорт', on_change=on_sort_change).classes('q-mb-md')
+            def save_changes():
+                session = Session()
+                f = session.query(Field).filter(Field.id == field_id).first()
+                if f:
+                    f.soil_type = soil_type_state['value']
+                    f.group = sort_state['value']
+                    f.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    session.commit()
+                    ui.notify('Данные сохранены', color='positive')
+                session.close()
+            ui.button('Сохранить', on_click=save_changes).props('color=primary').classes('mt-2')
+    ui.button('Назад', on_click=lambda: ui.navigate.to('/fields')).classes('mt-4')
+
+def normalize_coords(coords):
+    if not coords or not isinstance(coords, list):
+        return []
+    if isinstance(coords[0], list):
+        return [item for sub in coords for item in normalize_coords(sub)]
+    if isinstance(coords[0], dict):
+        return [[float(p['lat']), float(p['lng'])] for p in coords if 'lat' in p and 'lng' in p]
+    if isinstance(coords[0], (tuple, list)) and len(coords[0]) == 2:
+        return [[float(p[0]), float(p[1])] for p in coords]
+    return []
+
+def get_field_coords(coords):
+    # Если GeoJSON Feature
+    if isinstance(coords, dict) and 'geometry' in coords:
+        coords_arr = coords['geometry']['coordinates'][0]
+        return [[c[1], c[0]] for c in coords_arr]
+    # Если список списков (обычно [[{'lat':..., 'lng':...}, ...]])
+    if isinstance(coords, list) and len(coords) > 0:
+        if isinstance(coords[0], list):
+            inner = coords[0]
+            # [{'lat':..., 'lng':...}, ...]
+            if len(inner) > 0 and isinstance(inner[0], dict):
+                return [[float(p['lat']), float(p['lng'])] for p in inner]
+            # [[lat, lng], ...]
+            if len(inner) > 0 and isinstance(inner[0], (list, tuple)) and len(inner[0]) == 2:
+                return [[float(p[0]), float(p[1])] for p in inner]
+        # [{'lat':..., 'lng':...}, ...]
+        if isinstance(coords[0], dict):
+            return [[float(p['lat']), float(p['lng'])] for p in coords]
+        # [[lat, lng], ...]
+        if isinstance(coords[0], (list, tuple)) and len(coords[0]) == 2:
+            return [[float(p[0]), float(p[1])] for p in coords]
+    return []
+
+def field_climate_page(field_id: int):
+        session = Session()
+        field = session.query(Field).filter(Field.id == field_id).first()
+        session.close()
+        if not field:
+            ui.notify('Поле не найдено', color='negative')
+            return
+        coords = json.loads(field.coordinates)
+    coords_latlng = get_field_coords(coords)
+    if not coords_latlng or len(coords_latlng) < 3:
+        ui.notify('Недостаточно точек для построения полигона', color='negative')
+            return
+    lat_center = sum(p[0] for p in coords_latlng) / len(coords_latlng)
+    lng_center = sum(p[1] for p in coords_latlng) / len(coords_latlng)
+    poly = Polygon([(p[1], p[0]) for p in coords_latlng])
+
+    # Получаем тип почвы из базы зон по пересечению
+    gdf = gpd.read_file('soil_regions_full.gpkg')
+    intersected = gdf[gdf.geometry.intersects(poly)] if poly else gdf.iloc[[]]
+    all_soil_types = sorted(set(x for x in gdf['soil_legend_Descript'].dropna().unique().tolist() if x and x.strip()))
+    # Тип почвы по умолчанию всегда определяется по пересечению
+    if not intersected.empty:
+        soil_type_default = intersected.iloc[0]['soil_legend_Descript']
+            else:
+        soil_type_default = all_soil_types[0] if all_soil_types else ''
     if field.soil_type and field.soil_type in all_soil_types:
         soil_type_default = field.soil_type
     if soil_type_default and soil_type_default not in all_soil_types:
         all_soil_types = [soil_type_default] + all_soil_types
     soil_type_state = {'value': soil_type_default}
 
-    # Состояния для редактирования
     sort_state = {'value': field.group or ''}
-
-    # Вычисляем площадь поля (в гектарах)
-    poly = Polygon([(p['lng'], p['lat']) for p in coords[0]])
-    area_ha = poly.area * 111 * 111  # Грубо для EPSG:4326
-
-    # Список сортов
     variety_options = ['Аннушка', 'Гордея', 'Луч', 'Золотая']
     if not sort_state['value']:
         sort_state['value'] = variety_options[0]
@@ -243,15 +191,30 @@ def field_climate_page(field_id: int):
             ui.notify('Данные сохранены', color='positive')
         session.close()
 
+    area_ha = poly.area * 111 * 111 if poly else 0  # Грубо для EPSG:4326
+
     with ui.row().classes('w-full'):
         with ui.column().classes('w-2/3'):
             m = ui.leaflet(center=[lat_center, lng_center], zoom=13).classes('h-96 w-full')
-            m.generic_layer(name='polygon', args=[coords_latlng, {'color': 'red', 'weight': 2}])
+            if coords_latlng:
+                m.generic_layer(name='polygon', args=[coords_latlng, {'color': 'red', 'weight': 2}])
         with ui.column().classes('w-1/3'):
             ui.label('Информация о поле').classes('text-h6')
             table_data = [
                 {'Параметр': 'Название поля', 'Значение': field.name},
                 {'Параметр': 'Площадь (га)', 'Значение': f'{area_ha:.2f}'},
+                {'Параметр': 'Тип почвы', 'Значение': ''},
+                {'Параметр': 'Сорт', 'Значение': ''},
+                {'Параметр': 'pH', 'Значение': field.soil_ph or ''},
+                {'Параметр': 'Гумус', 'Значение': field.humus_content or ''},
+                {'Параметр': 'Текстура', 'Значение': field.soil_texture or ''},
+                {'Параметр': 'Высота', 'Значение': field.elevation or ''},
+                {'Параметр': 'Уклон', 'Значение': field.slope or ''},
+                {'Параметр': 'Экспозиция', 'Значение': field.aspect or ''},
+                {'Параметр': 'Заметки', 'Значение': field.notes or ''},
             ]
             ui.table(columns=[{'name': 'Параметр', 'label': 'Параметр', 'field': 'Параметр'}, {'name': 'Значение', 'label': 'Значение', 'field': 'Значение'}], rows=table_data).classes('mb-4')
+            ui.select(all_soil_types, value=soil_type_state['value'], label='Тип почвы', on_change=lambda e: soil_type_state.update({'value': e.value})).classes('q-mb-md')
+            ui.select(variety_options, value=sort_state['value'], label='Сорт', on_change=lambda e: sort_state.update({'value': e.value})).classes('q-mb-md')
+            ui.button('Сохранить', on_click=save_changes).props('color=primary').classes('mt-2')
     ui.button('Назад', on_click=lambda: ui.navigate.to("/fields")).classes('mt-4') 

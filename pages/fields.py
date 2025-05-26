@@ -3,7 +3,7 @@ from db import Session, Field, SoilAnalysis, ClimateData
 import json
 from datetime import datetime
 import csv
-from pages.yields import yields_page
+from pages.yields import show_yield_page
 from pages.climat import climat_page
 import psycopg2
 
@@ -67,7 +67,7 @@ def fields_page():
             def go_edit(r=row):
                 ui.navigate.to(f'/map?action=edit&fields={r["id"]}')
             def go_yield(r=row):
-                ui.navigate.to(f'/field_climate?field_id={r["id"]}')
+                ui.navigate.to(f'/yields?field_id={r["id"]}')
             def go_show(r=row):
                 ui.navigate.to(f'/field_climate?field_id={r["id"]}')
             with ui.row().classes('q-gutter-sm'):

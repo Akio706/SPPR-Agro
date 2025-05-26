@@ -1,6 +1,9 @@
 from db import initialize_db, Session, User
 from datetime import datetime
 import uuid
+import geopandas as gpd
+from sqlalchemy import create_engine
+import os
 
 def create_admin_user():
     """Создаем администратора, если его нет в базе"""
@@ -26,6 +29,18 @@ def create_admin_user():
     
     session.close()
 
+def import_soil_regions():
+    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/frostdb')
+    engine = create_engine(DATABASE_URL)
+    gdf = gpd.read_file('soil_regions.gpkg')
+    gdf.to_postgis('soil_regions', engine, if_exists='replace', index=False)
+
+def import_soils():
+    DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql://postgres:postgres@localhost:5432/frostdb')
+    engine = create_engine(DATABASE_URL)
+    gdf = gpd.read_file('soil_regions_full.gpkg')
+    gdf.to_postgis('soils', engine, if_exists='replace', index=False)
+
 if __name__ == '__main__':
     print("Инициализация базы данных...")
     initialize_db()
@@ -33,3 +48,9 @@ if __name__ == '__main__':
     
     create_admin_user()
     print("Готово!")
+    print("Импорт soil_regions.gpkg...")
+    import_soil_regions()
+    print("Импорт soil_regions.gpkg завершён!")
+    print("Импорт soil_regions_full.gpkg...")
+    import_soils()
+    print("Импорт soil_regions_full.gpkg завершён!")
