@@ -5,6 +5,7 @@ from datetime import datetime
 import psycopg2
 from shapely.geometry import Polygon, shape, mapping
 import geopandas as gpd
+import hashlib
 
 def normalize_coords(coords):
     if not coords or not isinstance(coords, list):
@@ -60,19 +61,62 @@ def get_zones_regions_polygons():
         dbname=os.getenv('POSTGRES_DB', 'postgres'),
         user=os.getenv('POSTGRES_USER', 'postgres'),
         password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
-        host=os.getenv('POSTGRES_HOST', 'localhost'),
+        host=os.getenv('POSTGRES_HOST', 'frost_db'),
         port=os.getenv('POSTGRES_PORT', '5432'),
     )
     cur = conn.cursor()
-    cur.execute("SELECT gid, ST_AsGeoJSON(wkb_geometry) FROM zones_regions LIMIT 100;")
+    cur.execute("SELECT gid, ST_AsGeoJSON(geom), soil_legend_Descript FROM soil_regions_full;")
+    # Генерируем цвета для каждого типа почвы
+    color_map = {}
+    def get_color(soil_type):
+        if soil_type not in color_map:
+            # Генерируем цвет на основе хеша типа почвы
+            h = hashlib.md5(soil_type.encode()).hexdigest()
+            color = f'#{h[:6]}'
+            color_map[soil_type] = color
+        return color_map[soil_type]
     result = []
-    for gid, geojson in cur.fetchall():
+    for row in cur.fetchall():
+        gid, geojson, soil_type = row
         if geojson:
             gj = json.loads(geojson)
-            # Leaflet ожидает массив координат [lat, lng], а GeoJSON — [lng, lat]
-            coords = gj['coordinates'][0]
-            coords_latlng = [[c[1], c[0]] for c in coords]
-            result.append({'gid': gid, 'coords': coords_latlng})
+            coords_latlng = [[c[1], c[0]] for c in gj['coordinates'][0]]
+            color = get_color(soil_type or "unknown")
+            result.append({'gid': gid, 'coords': coords_latlng, 'color': color, 'soil_type': soil_type})
+    print(f"Добавлено полигонов: {len(result)}")
+    cur.close()
+    conn.close()
+    return result
+
+def get_zones_regions_polygons_bbox(bbox=None):
+    import os
+    import hashlib
+    conn = psycopg2.connect(
+        dbname=os.getenv('POSTGRES_DB', 'postgres'),
+        user=os.getenv('POSTGRES_USER', 'postgres'),
+        password=os.getenv('POSTGRES_PASSWORD', 'postgres'),
+        host=os.getenv('POSTGRES_HOST', 'frost_db'),
+        port=os.getenv('POSTGRES_PORT', '5432'),
+    )
+    cur = conn.cursor()
+    # Временно убираем фильтрацию по bbox для отладки
+    cur.execute("SELECT gid, ST_AsGeoJSON(geom), soil_legend_Descript FROM soil_regions_full;")
+    color_map = {}
+    def get_color(soil_type):
+        if soil_type not in color_map:
+            h = hashlib.md5((soil_type or 'unknown').encode()).hexdigest()
+            color = f'#{h[:6]}'
+            color_map[soil_type] = color
+        return color_map[soil_type]
+    result = []
+    for row in cur.fetchall():
+        gid, geojson, soil_type = row
+        if geojson:
+            gj = json.loads(geojson)
+            coords_latlng = [[c[1], c[0]] for c in gj['coordinates'][0]]
+            color = get_color(soil_type or "unknown")
+            result.append({'gid': gid, 'coords': coords_latlng, 'color': color, 'soil_type': soil_type})
+    print(f"Добавлено полигонов: {len(result)}")
     cur.close()
     conn.close()
     return result
@@ -119,6 +163,40 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=draw_control, hide_drawn_items=True).classes('h-96 w-full')
         options = {'color': 'red', 'weight': 1}
         drawn_coords = {'value': None}
+
+        # --- Тулбокс для отображения зон почв ---
+        soil_layer_state = {'visible': False}
+        soil_layers = []
+        def update_soil_layers(bounds):
+            min_lat = bounds['_southWest']['lat']
+            min_lng = bounds['_southWest']['lng']
+            max_lat = bounds['_northEast']['lat']
+            max_lng = bounds['_northEast']['lng']
+            bbox = (min_lat, min_lng, max_lat, max_lng)
+            for layer in soil_layers:
+                m.remove_layer(layer)
+            soil_layers.clear()
+            for poly in get_zones_regions_polygons_bbox(bbox):
+                layer = m.generic_layer(name=f'zones_{poly["gid"]}', args=[poly['coords'], {'color': poly['color'], 'weight': 2, 'opacity': 0.5, 'fillOpacity': 0.5, 'fillColor': poly['color'], 'dashArray': '2', 'borderColor': 'black'}])
+                soil_layers.append(layer)
+                if poly['coords']:
+                    lat, lng = poly['coords'][0]
+                    m.marker([lat, lng]).bind_popup(poly['soil_type'] or "?")
+        def toggle_soil_layer(e):
+            if e.value:
+                soil_layer_state['visible'] = True
+                # Не вызываем update_soil_layers, ждём on_move_end
+            else:
+                for layer in soil_layers:
+                    m.remove_layer(layer)
+                soil_layers.clear()
+                soil_layer_state['visible'] = False
+        ui.checkbox('Показать карту типов почв (soil_regions_full)', value=False, on_change=toggle_soil_layer).classes('mb-2')
+        def on_move_end(e):
+            if soil_layer_state['visible']:
+                update_soil_layers(e.args['bounds'])
+        m.on('moveend', on_move_end)
+
         def handle_draw(e: events.GenericEventArguments):
             coords = normalize_coords(e.args['layer']['_latlngs'])
             options = {'color': 'red', 'weight': 1}
@@ -241,7 +319,7 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
 
     def draw_zones_regions_layer(m):
         for poly in get_zones_regions_polygons():
-            m.generic_layer(name=f'zones_{poly["gid"]}', args=[poly['coords'], {'color': 'green', 'weight': 1, 'opacity': 0.5}])
+            m.generic_layer(name=f'zones_{poly["gid"]}', args=[poly['coords'], {'color': poly['color'], 'weight': 1, 'opacity': 0.5}])
 
     # В каждом режиме после создания карты m:
     # draw_zones_regions_layer(m)

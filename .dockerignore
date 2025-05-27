@@ -87,5 +87,8 @@ map_data.db
 # 17. Exclude files with no extension (if not needed)
 # *.
 
+# 18. Exclude AppData folder
+AppData/
+
 # End of .dockerignore
  
