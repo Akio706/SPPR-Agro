@@ -101,8 +101,12 @@ def fields_page():
             filename = f'field_{field_id}_params.csv'
             coords = json.loads(field.coordinates)
             latlngs = coords[0]
-            lat = sum(p['lat'] for p in latlngs) / len(latlngs)
-            lng = sum(p['lng'] for p in latlngs) / len(latlngs)
+            if isinstance(latlngs[0], dict):
+                lat = sum(p['lat'] for p in latlngs) / len(latlngs)
+                lng = sum(p['lng'] for p in latlngs) / len(latlngs)
+            else:
+                lat = sum(p[0] for p in latlngs) / len(latlngs)
+                lng = sum(p[1] for p in latlngs) / len(latlngs)
             fieldnames = [
                 'id', 'name', 'created_at', 'coordinates', 'group', 'notes', 'area', 'soil_type', 'soil_ph', 'humus_content', 'soil_texture', 'elevation', 'slope', 'aspect'
             ]
@@ -132,7 +136,7 @@ def fields_page():
 
         def export_zones_to_csv():
             filename = 'zones_regions.csv'
-            conn = psycopg2.connect(dbname='postgres', user='postgres', password='postgres', host='localhost', port='5432')
+            conn = psycopg2.connect(dbname='postgres', user='postgres', password='postgres', host='frost_db', port='5432')
             cur = conn.cursor()
             cur.execute("SELECT gid, ST_AsGeoJSON(wkb_geometry) FROM zones_regions LIMIT 1000;")
             fieldnames = ['gid', 'geojson']

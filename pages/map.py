@@ -6,6 +6,8 @@ import psycopg2
 from shapely.geometry import Polygon, shape, mapping
 import geopandas as gpd
 import hashlib
+import os
+import requests
 
 def normalize_coords(coords):
     if not coords or not isinstance(coords, list):
@@ -56,7 +58,6 @@ def show_all_polygons(m, user_id):
 
 def get_zones_regions_polygons():
     # Подключение к базе Postgres/PostGIS напрямую через psycopg2
-    import os
     conn = psycopg2.connect(
         dbname=os.getenv('POSTGRES_DB', 'postgres'),
         user=os.getenv('POSTGRES_USER', 'postgres'),
@@ -89,8 +90,6 @@ def get_zones_regions_polygons():
     return result
 
 def get_zones_regions_polygons_bbox(bbox=None):
-    import os
-    import hashlib
     conn = psycopg2.connect(
         dbname=os.getenv('POSTGRES_DB', 'postgres'),
         user=os.getenv('POSTGRES_USER', 'postgres'),
@@ -164,37 +163,35 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         options = {'color': 'red', 'weight': 1}
         drawn_coords = {'value': None}
 
-        # --- Тулбокс для отображения зон почв ---
-        soil_layer_state = {'visible': False}
-        soil_layers = []
-        def update_soil_layers(bounds):
+        # --- Тулбокс для отображения зон почв через geojson ---
+        soil_geojson_layer = {'layer': None}
+        soil_geojson_state = {'visible': False}
+        def fetch_and_show_soil_geojson(bounds):
             min_lat = bounds['_southWest']['lat']
             min_lng = bounds['_southWest']['lng']
             max_lat = bounds['_northEast']['lat']
             max_lng = bounds['_northEast']['lng']
-            bbox = (min_lat, min_lng, max_lat, max_lng)
-            for layer in soil_layers:
-                m.remove_layer(layer)
-            soil_layers.clear()
-            for poly in get_zones_regions_polygons_bbox(bbox):
-                layer = m.generic_layer(name=f'zones_{poly["gid"]}', args=[poly['coords'], {'color': poly['color'], 'weight': 2, 'opacity': 0.5, 'fillOpacity': 0.5, 'fillColor': poly['color'], 'dashArray': '2', 'borderColor': 'black'}])
-                soil_layers.append(layer)
-                if poly['coords']:
-                    lat, lng = poly['coords'][0]
-                    m.marker([lat, lng]).bind_popup(poly['soil_type'] or "?")
-        def toggle_soil_layer(e):
+            url = f'http://localhost:8080/api/soil_geojson?min_lat={min_lat}&min_lng={min_lng}&max_lat={max_lat}&max_lng={max_lng}'
+            try:
+                geojson = requests.get(url).json()
+                if soil_geojson_layer['layer']:
+                    m.remove_layer(soil_geojson_layer['layer'])
+                soil_geojson_layer['layer'] = m.geo_json(geojson)
+            except Exception as ex:
+                ui.notify(f'Ошибка загрузки geojson: {ex}', color='warning')
+        def toggle_soil_geojson(e):
             if e.value:
-                soil_layer_state['visible'] = True
-                # Не вызываем update_soil_layers, ждём on_move_end
+                soil_geojson_state['visible'] = True
+                # Не вызываем fetch_and_show_soil_geojson здесь! Ждём moveend
             else:
-                for layer in soil_layers:
-                    m.remove_layer(layer)
-                soil_layers.clear()
-                soil_layer_state['visible'] = False
-        ui.checkbox('Показать карту типов почв (soil_regions_full)', value=False, on_change=toggle_soil_layer).classes('mb-2')
+                soil_geojson_state['visible'] = False
+                if soil_geojson_layer['layer']:
+                    m.remove_layer(soil_geojson_layer['layer'])
+                    soil_geojson_layer['layer'] = None
+        ui.checkbox('Показать карту типов почв (soil_regions_full)', value=False, on_change=toggle_soil_geojson).classes('mb-2')
         def on_move_end(e):
-            if soil_layer_state['visible']:
-                update_soil_layers(e.args['bounds'])
+            if soil_geojson_state['visible']:
+                fetch_and_show_soil_geojson(e.args['bounds'])
         m.on('moveend', on_move_end)
 
         def handle_draw(e: events.GenericEventArguments):
@@ -281,6 +278,35 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
             options = {'color': 'red', 'weight': 1, 'editable': True}
             if coords and len(coords) >= 3:
                 m.generic_layer(name='polygon', args=[coords, options])
+            # --- Оптимизированное отображение geojson почв ---
+            soil_geojson_layer = {'layer': None}
+            soil_geojson_state = {'visible': False}
+            def fetch_and_show_soil_geojson(bounds):
+                min_lat = bounds['_southWest']['lat']
+                min_lng = bounds['_southWest']['lng']
+                max_lat = bounds['_northEast']['lat']
+                max_lng = bounds['_northEast']['lng']
+                url = f'http://localhost:8080/api/soil_geojson?min_lat={min_lat}&min_lng={min_lng}&max_lat={max_lat}&max_lng={max_lng}'
+                try:
+                    geojson = requests.get(url).json()
+                    if soil_geojson_layer['layer']:
+                        m.remove_layer(soil_geojson_layer['layer'])
+                    soil_geojson_layer['layer'] = m.geo_json(geojson)
+                except Exception as ex:
+                    ui.notify(f'Ошибка загрузки geojson: {ex}', color='warning')
+            def toggle_soil_geojson(e):
+                if e.value:
+                    soil_geojson_state['visible'] = True
+                else:
+                    soil_geojson_state['visible'] = False
+                    if soil_geojson_layer['layer']:
+                        m.remove_layer(soil_geojson_layer['layer'])
+                        soil_geojson_layer['layer'] = None
+            ui.checkbox('Показать карту типов почв (GeoJSON)', value=False, on_change=toggle_soil_geojson).classes('mb-2')
+            def on_move_end(e):
+                if soil_geojson_state['visible']:
+                    fetch_and_show_soil_geojson(e.args['bounds'])
+            m.on('moveend', on_move_end)
             edited_coords = {'value': coords}
             def on_draw_edited(e):
                 layers = e.args.get('layers', [])

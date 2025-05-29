@@ -37,6 +37,30 @@ def fao_simple(area, temp, prec):
     # FAO простая: Урожай = площадь * (темп + осадки/10)
     return area * (temp + prec/10)
 
+def read_bonitet_data(filename="soil_bonitet.csv"):
+    """Reads bonitet data from a CSV file."""
+    bonitet_data = []
+    try:
+        with open(filename, mode='r', encoding='utf-8') as csvfile:
+            reader = csv.DictReader(csvfile)
+            for row in reader:
+                # Convert bonitet to integer, handle potential errors
+                try:
+                    row['bonitet'] = int(row['bonitet'])
+                except (ValueError, TypeError):
+                    row['bonitet'] = None # Or some default value like 0
+                # Remove BOM from the 'soil_type' key if present
+                if '\ufeffsoil_type' in row:
+                    row['soil_type'] = row.pop('\ufeffsoil_type')
+                bonitet_data.append(row)
+    except FileNotFoundError:
+        print(f"Error: {filename} not found.")
+        return []
+    except Exception as e:
+        print(f"Error reading {filename}: {e}")
+        return []
+    return bonitet_data
+
 def show_yield_page(field_id: int):
     session = Session()
     field = session.query(Field).filter(Field.id == field_id).first()
@@ -67,6 +91,16 @@ def show_yield_page(field_id: int):
 
     def on_soil_change(e):
         soil_type_state['value'] = e.value
+        # При смене типа почвы обновляем поле бонитета значением из soil_regions_full
+        new_bonitet = None
+        try:
+            gdf = gpd.read_file('soil_regions_full.gpkg')
+            matching_soil = gdf[gdf['soil_legend_Descript'] == e.value]
+            if not matching_soil.empty:
+                new_bonitet = matching_soil.iloc[0].get('bonitet')
+        except Exception as ex:
+             print(f"Ошибка при получении бонитета для нового типа почвы: {ex}")
+        # bonitet_input.value = new_bonitet # Удаляем обновление поля бонитета
     def on_sort_change(e):
         sort_state['value'] = e.value
 
@@ -77,6 +111,35 @@ def show_yield_page(field_id: int):
             m = ui.leaflet(center=[sum(p[0] for p in coords_latlng) / len(coords_latlng), sum(p[1] for p in coords_latlng) / len(coords_latlng)], zoom=13).classes('h-96 w-full')
             if coords_latlng:
                 m.generic_layer(name='polygon', args=[coords_latlng, {'color': 'red', 'weight': 2}])
+            soil_geojson_layer = {'layer': None}
+            soil_geojson_state = {'visible': False}
+            def fetch_and_show_soil_geojson(bounds):
+                min_lat = bounds['_southWest']['lat']
+                min_lng = bounds['_southWest']['lng']
+                max_lat = bounds['_northEast']['lat']
+                max_lng = bounds['_northEast']['lng']
+                url = f'http://localhost:8080/api/soil_geojson?min_lat={min_lat}&min_lng={min_lng}&max_lat={max_lat}&max_lng={max_lng}'
+                import requests
+                try:
+                    geojson = requests.get(url).json()
+                    if soil_geojson_layer['layer']:
+                        m.remove_layer(soil_geojson_layer['layer'])
+                    soil_geojson_layer['layer'] = m.geo_json(geojson)
+                except Exception as ex:
+                    ui.notify(f'Ошибка загрузки geojson: {ex}', color='warning')
+            def toggle_soil_geojson():
+                if not soil_geojson_state['visible']:
+                    soil_geojson_state['visible'] = True
+                else:
+                    soil_geojson_state['visible'] = False
+                    if soil_geojson_layer['layer']:
+                        m.remove_layer(soil_geojson_layer['layer'])
+                        soil_geojson_layer['layer'] = None
+            ui.button('Показать карту почв (GeoJSON)', on_click=toggle_soil_geojson).classes('mt-2')
+            def on_move_end(e):
+                if soil_geojson_state['visible']:
+                    fetch_and_show_soil_geojson(e.args['bounds'])
+            m.on('moveend', on_move_end)
         with ui.column().classes('w-1/3'):
             ui.label('Информация о поле').classes('text-h6')
             table_data = [
@@ -87,6 +150,9 @@ def show_yield_page(field_id: int):
             ui.table(columns=[{'name': 'Параметр', 'label': 'Параметр', 'field': 'Параметр'}, {'name': 'Значение', 'label': 'Значение', 'field': 'Значение'}], rows=table_data).classes('mb-4')
             ui.select(all_soil_types, value=soil_type_state['value'], label='Тип почвы', on_change=on_soil_change).classes('q-mb-md')
             ui.select(variety_options, value=sort_state['value'], label='Сорт', on_change=on_sort_change).classes('q-mb-md')
+            # --- Информация о доступных сортах ---
+            ui.label('Доступные сорта:').classes('mt-4 text-weight-bold')
+            ui.markdown('\n'.join(f'- {sort}' for sort in variety_options)).classes('mb-4')
             def save_changes():
                 session = Session()
                 f = session.query(Field).filter(Field.id == field_id).first()
@@ -94,6 +160,14 @@ def show_yield_page(field_id: int):
                     f.soil_type = soil_type_state['value']
                     f.group = sort_state['value']
                     f.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    # --- Удаляем сохранение custom_bonitet ---
+                    # try:
+                    #     bonitet_value_to_save = float(bonitet_input.value)
+                    #     f.custom_bonitet = bonitet_value_to_save
+                    # except (ValueError, TypeError):
+                    #     f.custom_bonitet = None # Сохраняем None, если значение некорректно
+                    #     ui.notify('Некорректное значение бонитета. Сохранено как пустое.', color='warning')
+
                     session.commit()
                     ui.notify('Данные сохранены', color='positive')
                 session.close()
@@ -137,6 +211,7 @@ def get_field_coords(coords):
 def field_climate_page(field_id: int):
     session = Session()
     field = session.query(Field).filter(Field.id == field_id).first()
+
     session.close()
     if not field:
         ui.notify('Поле не найдено', color='negative')
@@ -177,4 +252,20 @@ def field_climate_page(field_id: int):
                 {'Параметр': 'Тип почвы', 'Значение': soil_type_default},
             ]
             ui.table(columns=[{'name': 'Параметр', 'label': 'Параметр', 'field': 'Параметр'}, {'name': 'Значение', 'label': 'Значение', 'field': 'Значение'}], rows=table_data).classes('mb-4')
-    ui.button('Назад', on_click=lambda: ui.navigate.to("/fields")).classes('mt-4') 
+            ui.label('Бонитет почв').classes('text-h6 mt-4')
+            bonitet_data = read_bonitet_data()
+            bonitet_columns = [
+                {'name': 'soil_type', 'label': 'Тип почвы', 'field': 'soil_type'},
+                {'name': 'bonitet', 'label': 'Бонитет', 'field': 'bonitet'},
+            ]
+            ui.table(columns=bonitet_columns, rows=bonitet_data).classes('mb-4').props('style="max-height: 300px; overflow-y: auto;"')
+            
+            # Debugging prints for bonitet data
+            print("--- Debugging Bonitet Data ---")
+            print(f"Number of rows read: {len(bonitet_data)}")
+            if bonitet_data:
+                print("First row data:", bonitet_data[0])
+                print("Last row data:", bonitet_data[-1])
+            print("--- End Debugging ---")
+
+    ui.button('Назад', on_click=lambda: ui.navigate.to('/fields')).classes('mt-4') 
