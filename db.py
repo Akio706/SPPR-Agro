@@ -65,6 +65,7 @@ class Field(Base):
     last_updated = Column(String)
     group = Column(String)
     notes = Column(Text)
+    custom_bonitet = Column(Float)
     user = relationship("User", back_populates="fields")
     soil_analyses = relationship("SoilAnalysis", back_populates="field")
     climate_data = relationship("ClimateData", back_populates="field")

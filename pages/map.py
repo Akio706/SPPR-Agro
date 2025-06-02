@@ -165,7 +165,6 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
 
         # --- Тулбокс для отображения зон почв через geojson ---
         soil_geojson_layer = {'layer': None}
-        soil_geojson_state = {'visible': False}
         def fetch_and_show_soil_geojson(bounds):
             min_lat = bounds['_southWest']['lat']
             min_lng = bounds['_southWest']['lng']
@@ -179,19 +178,8 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
                 soil_geojson_layer['layer'] = m.geo_json(geojson)
             except Exception as ex:
                 ui.notify(f'Ошибка загрузки geojson: {ex}', color='warning')
-        def toggle_soil_geojson(e):
-            if e.value:
-                soil_geojson_state['visible'] = True
-                # Не вызываем fetch_and_show_soil_geojson здесь! Ждём moveend
-            else:
-                soil_geojson_state['visible'] = False
-                if soil_geojson_layer['layer']:
-                    m.remove_layer(soil_geojson_layer['layer'])
-                    soil_geojson_layer['layer'] = None
-        ui.checkbox('Показать карту типов почв (soil_regions_full)', value=False, on_change=toggle_soil_geojson).classes('mb-2')
         def on_move_end(e):
-            if soil_geojson_state['visible']:
-                fetch_and_show_soil_geojson(e.args['bounds'])
+            fetch_and_show_soil_geojson(e.args['bounds'])
         m.on('moveend', on_move_end)
 
         def handle_draw(e: events.GenericEventArguments):
@@ -248,106 +236,191 @@ def map_page(action: str = None, fields: str = None, field_id: str = None):
         return
 
     # --- Редактирование/просмотр поля по ID ---
-    if (action == 'edit' and (fields or field_id)) or (action == 'select' and (fields or field_id)):
-        field_id = fields or field_id
-        with Session() as session:
-            field = session.query(Field).filter(Field.id == field_id, Field.user_id == user_id).first()
-            if not field:
-                ui.notify('Поле не найдено', color='negative')
-                ui.button('Назад', on_click=lambda: ui.navigate.to('/fields'))
-                return
-            name_input = ui.input('Название поля', value=field.name).classes('mb-2')
-            note_input = ui.input('Заметка', value=field.notes if hasattr(field, 'notes') else '').classes('mb-2')
-            coords = json.loads(field.coordinates)
-            coords = normalize_coords(coords)
-            draw_control = {
-                'draw': {
-                    'polygon': False,
-                    'marker': False,
-                    'circle': False,
-                    'rectangle': False,
-                    'polyline': False,
-                    'circlemarker': False,
-                },
-                'edit': {
-                    'edit': True if action == 'edit' else False,
-                    'remove': False,
-                },
-            }
-            m = ui.leaflet(center=(55.75, 37.62), zoom=9, draw_control=draw_control, hide_drawn_items=True).classes('h-96 w-full')
-            options = {'color': 'red', 'weight': 1, 'editable': True}
-            if coords and len(coords) >= 3:
-                m.generic_layer(name='polygon', args=[coords, options])
-            # --- Оптимизированное отображение geojson почв ---
-            soil_geojson_layer = {'layer': None}
-            soil_geojson_state = {'visible': False}
-            def fetch_and_show_soil_geojson(bounds):
-                min_lat = bounds['_southWest']['lat']
-                min_lng = bounds['_southWest']['lng']
-                max_lat = bounds['_northEast']['lat']
-                max_lng = bounds['_northEast']['lng']
-                url = f'http://localhost:8080/api/soil_geojson?min_lat={min_lat}&min_lng={min_lng}&max_lat={max_lat}&max_lng={max_lng}'
-                try:
-                    geojson = requests.get(url).json()
-                    if soil_geojson_layer['layer']:
-                        m.remove_layer(soil_geojson_layer['layer'])
-                    soil_geojson_layer['layer'] = m.geo_json(geojson)
-                except Exception as ex:
-                    ui.notify(f'Ошибка загрузки geojson: {ex}', color='warning')
-            def toggle_soil_geojson(e):
-                if e.value:
-                    soil_geojson_state['visible'] = True
-                else:
-                    soil_geojson_state['visible'] = False
-                    if soil_geojson_layer['layer']:
-                        m.remove_layer(soil_geojson_layer['layer'])
-                        soil_geojson_layer['layer'] = None
-            ui.checkbox('Показать карту типов почв (GeoJSON)', value=False, on_change=toggle_soil_geojson).classes('mb-2')
-            def on_move_end(e):
-                if soil_geojson_state['visible']:
-                    fetch_and_show_soil_geojson(e.args['bounds'])
-            m.on('moveend', on_move_end)
-            edited_coords = {'value': coords}
-            def on_draw_edited(e):
-                layers = e.args.get('layers', [])
-                if layers:
-                    # В NiceGUI обычно e.args['layers'] — список объектов с ключом 'layer', где 'layer' содержит '_latlngs'
-                    for lyr in layers:
-                        if 'layer' in lyr and '_latlngs' in lyr['layer']:
-                            edited_coords['value'] = lyr['layer']['_latlngs']
-                            break
-            if action == 'edit':
-                m.on('draw:edited', on_draw_edited)
-                def save_changes():
-                    if not name_input.value:
-                        ui.notify('Введите название поля', color='warning')
-                        return
-                    def do_save():
-                        field.name = name_input.value
-                        field.notes = note_input.value
-                        field.coordinates = json.dumps(edited_coords['value'])
-                        field.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        session.commit()
-                        ui.notify('Поле обновлено', color='positive')
-                        ui.navigate.to('/fields')
-                    with ui.dialog() as dialog, ui.card():
-                        ui.label('Сохранить изменения?')
-                        ui.button('Да', on_click=lambda: (do_save(), dialog.close())).props('color=positive')
-                        ui.button('Нет', on_click=dialog.close).props('color=negative')
-                    dialog.open()
-                ui.button('Сохранить', on_click=save_changes).props('color=positive').classes('mt-4')
-            ui.button('Назад', on_click=lambda: ui.navigate.to('/fields')).classes('mt-4')
-        return
+    if action == 'edit' or field_id:
+        field_to_highlight = None
+        if field_id:
+            # Получаем поле для подсветки
+            with Session() as session:
+                field_to_highlight = session.query(Field).filter(Field.id == field_id, Field.user_id == user_id).first()
+                if not field_to_highlight:
+                    ui.notify(f'Поле с id={field_id} не найдено', color='negative')
+                    # Если поле не найдено, возможно, стоит перенаправить или показать пустую карту
+                    ui.navigate.to('/fields') # Перенаправляем обратно на список полей
+                    return
+
+        draw_control = {
+            'draw': {
+                'polygon': False,
+                'marker': False,
+                'circle': False,
+                'rectangle': False,
+                'polyline': False,
+                'circlemarker': False,
+            },
+            'edit': {
+                'edit': True if action == 'edit' and field_to_highlight else False,
+                'remove': True if action == 'edit' and field_to_highlight else False,
+            },
+        }
+        # Центрируем карту на выбранном поле, если оно есть
+        initial_center = (55.75, 37.62)
+        initial_zoom = 9
+        if field_to_highlight and field_to_highlight.coordinates:
+             try:
+                 coords = json.loads(field_to_highlight.coordinates)
+                 normalized_coords = normalize_coords(coords)
+                 if normalized_coords:
+                     # Приблизительное центрирование по первой координате полигона
+                     initial_center = (normalized_coords[0][0], normalized_coords[0][1])
+                     # Можно добавить логику для вычисления центра bounding box для лучшего центрирования
+             except Exception as e:
+                 print(f"Ошибка при центрировании карты: {e}")
+
+
+        m = ui.leaflet(center=initial_center, zoom=initial_zoom, draw_control=draw_control, hide_drawn_items=True).classes('h-96 w-full')
+
+        # Рисуем все остальные поля
+        draw_all_user_fields(m, user_id, exclude_id=field_id)
+
+        # Рисуем выбранное поле с подсветкой, если оно есть
+        if field_to_highlight and field_to_highlight.coordinates:
+             try:
+                 coords = json.loads(field_to_highlight.coordinates)
+                 normalized_coords = normalize_coords(coords)
+                 if normalized_coords and len(normalized_coords) >= 3:
+                     # Отрисовываем выбранное поле с другим стилем для подсветки
+                     m.generic_layer(name=f'highlighted_polygon_{field_to_highlight.id}', args=[normalized_coords, {'color': 'red', 'weight': 4}]) # Используем красный цвет и более толстую линию для подсветки
+                     # Если режим редактирования, делаем слой редактируемым
+                     if action == 'edit':
+                          m.run_method(f'map.editTools.editLayer(map.drawnItems.getLayer(map.leafletElements["highlighted_polygon_{field_to_highlight.id}"]))') # Активируем редактирование для подсвеченного слоя
+
+             except Exception as e:
+                 ui.notify(f'Ошибка отображения поля с id={field_to_highlight.id}: {e}', color='negative')
+
+        # --- Тулбокс для отображения зон почв через geojson ---
+        soil_geojson_layer = {'layer': None}
+        def fetch_and_show_soil_geojson(bounds):
+            min_lat = bounds['_southWest']['lat']
+            min_lng = bounds['_southWest']['lng']
+            max_lat = bounds['_northEast']['lat']
+            max_lng = bounds['_northEast']['lng']
+            url = f'http://localhost:8080/api/soil_geojson?min_lat={min_lat}&min_lng={min_lng}&max_lat={max_lat}&max_lng={max_lng}'
+            try:
+                geojson = requests.get(url).json()
+                if soil_geojson_layer['layer']:
+                    m.remove_layer(soil_geojson_layer['layer'])
+                soil_geojson_layer['layer'] = m.geo_json(geojson)
+            except Exception as ex:
+                ui.notify(f'Ошибка загрузки geojson: {ex}', color='warning')
+        def on_move_end(e):
+            fetch_and_show_soil_geojson(e.args['bounds'])
+        m.on('moveend', on_move_end)
+        edited_coords = {'value': coords}
+        def on_draw_edited(e):
+            layers = e.args.get('layers', [])
+            if layers:
+                # В NiceGUI обычно e.args['layers'] — список объектов с ключом 'layer', где 'layer' содержит '_latlngs'
+                for lyr in layers:
+                    if 'layer' in lyr and '_latlngs' in lyr['layer']:
+                        edited_coords['value'] = lyr['layer']['_latlngs']
+                        break
+        if action == 'edit':
+            m.on('draw:edited', on_draw_edited)
+            def save_changes():
+                if not name_input.value:
+                    ui.notify('Введите название поля', color='warning')
+                    return
+                def do_save():
+                    field_to_highlight.name = name_input.value
+                    field_to_highlight.notes = note_input.value
+                    field_to_highlight.coordinates = json.dumps(edited_coords['value'])
+                    field_to_highlight.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                    session.commit()
+                    ui.notify('Поле обновлено', color='positive')
+                    ui.navigate.to('/fields')
+                with ui.dialog() as dialog, ui.card():
+                    ui.label('Сохранить изменения?')
+                    ui.button('Да', on_click=lambda: (do_save(), dialog.close())).props('color=positive')
+                    ui.button('Нет', on_click=dialog.close).props('color=negative')
+                dialog.open()
+            ui.button('Сохранить', on_click=save_changes).props('color=positive').classes('mt-4')
+        ui.button('Назад', on_click=lambda: ui.navigate.to('/fields')).classes('mt-4')
+
+        # Добавляем кнопки "Сохранить изменения" и "Отмена" только если в режиме редактирования
+        if action == 'edit' and field_to_highlight:
+             # Добавляем поля ввода для имени и заметки в режиме редактирования
+             name_input = ui.input('Название поля', value=field_to_highlight.name).classes('mb-2')
+             note_input = ui.input('Заметка', value=field_to_highlight.notes).classes('mb-2')
+             with ui.row().classes('mt-4'):
+                 ui.button('Сохранить изменения', on_click=lambda: ui.run_javascript(f'map.fireEvent("draw:edited", {{ layers: map.drawnItems }})')).props('color=positive') # Запускаем событие draw:edited
+                 ui.button('Отмена редактирования', on_click=lambda: ui.navigate.to(f'/map?field_id={field_to_highlight.id}')).props('color=negative') # Отмена - возвращаемся в режим просмотра
+
+        # Добавляем обработчик для события draw:edited
+        def on_draw_edited(e):
+             # Логика сохранения изменений полигона (взять из вашего существующего кода редактирования)
+             print("Редактирование завершено", e.args)
+             # Здесь должна быть ваша логика сохранения отредактированных координат в базу данных
+             if 'layers' in e.args and field_to_highlight:
+                 edited_layers = e.args['layers']
+                 edited_field_layer = edited_layers.getLayer(m.leafletElements[f'highlighted_polygon_{field_to_highlight.id}'])
+                 if edited_field_layer:
+                      edited_coords = edited_field_layer._latlngs # Получаем новые координаты
+                      normalized_edited_coords = normalize_coords(edited_coords)
+                      if normalized_edited_coords:
+                          field_to_highlight.coordinates = json.dumps(normalized_edited_coords)
+                          field_to_highlight.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+                          with Session() as session:
+                               session.merge(field_to_highlight)
+                               session.commit()
+                          ui.notify('Изменения сохранены', color='positive')
+                      else:
+                           ui.notify('Не удалось получить координаты измененного полигона', color='warning')
+                 else:
+                      ui.notify('Не удалось найти измененный слой для сохранения', color='warning')
+
+        m.on('draw:edited', on_draw_edited) # Подписываемся на событие только в режиме редактирования
+
+        return # Завершаем функцию здесь, если обрабатываем просмотр/редактирование
 
     # --- Если ничего не выбрано, просто карта ---
     ui.label('Выберите действие: создать или редактировать поле').classes('text-h6 q-mb-md')
     ui.button('Назад', on_click=lambda: ui.navigate.to('/fields')).classes('mt-4')
 
-    def draw_zones_regions_layer(m):
-        for poly in get_zones_regions_polygons():
-            m.generic_layer(name=f'zones_{poly["gid"]}', args=[poly['coords'], {'color': poly['color'], 'weight': 1, 'opacity': 0.5}])
+    # Этот блок кода будет выполнен, если action не 'create' и не 'edit', и field_id отсутствует.
+    # Создаем карту для общего просмотра
+    m = ui.leaflet(center=(55.75, 37.62), zoom=9).classes('h-96 w-full')
+    draw_all_user_fields(m, user_id) # Отображаем все поля пользователя
 
-    # В каждом режиме после создания карты m:
-    # draw_zones_regions_layer(m)
+    # --- Тулбокс для отображения зон почв через geojson ---
+    soil_geojson_layer = {'layer': None}
+    def fetch_and_show_soil_geojson(bounds):
+        min_lat = bounds['_southWest']['lat']
+        min_lng = bounds['_southWest']['lng']
+        max_lat = bounds['_northEast']['lat']
+        max_lng = bounds['_northEast']['lng']
+        # Убедитесь, что этот URL правильный и API эндпоинт soil_geojson работает
+        url = f'http://localhost:8080/api/soil_geojson?min_lat={min_lat}&min_lng={min_lng}&max_lat={max_lat}&max_lng={max_lng}'
+        try:
+            geojson = requests.get(url).json()
+            if soil_geojson_layer['layer']:
+                m.remove_layer(soil_geojson_layer['layer'])
+            # Убедитесь, что geojson данные корректны для добавления на карту
+            if geojson and ('features' in geojson or 'coordinates' in geojson): # Простая проверка структуры
+                 soil_geojson_layer['layer'] = m.geo_json(geojson)
+            else:
+                 ui.notify('Получены некорректные данные GeoJSON', color='warning')
+
+        except Exception as ex:
+            ui.notify(f'Ошибка загрузки geojson: {ex}', color='warning')
+
+    def on_move_end(e):
+        # Если soil_geojson_state['visible'] (что теперь всегда true в этом контексте), загружаем данные
+        fetch_and_show_soil_geojson(e.args['bounds'])
+
+    # Подписываемся на событие moveend для всех режимов карты
+    m.on('moveend', on_move_end)
+
+    # Кнопка "Назад" - оставлена в каждом блоке создания карты
+    ui.button('Назад', on_click=lambda: ui.navigate.to('/fields')).classes('mt-4')
 
     ui.page('/map')(map_page)
