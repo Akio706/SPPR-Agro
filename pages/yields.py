@@ -10,6 +10,12 @@ from shapely.ops import unary_union
 from datetime import datetime
 import openpyxl
 from openpyxl import Workbook
+import pandas as pd
+import numpy as np
+from measuring import calculate_yield, VarConst, PARj, Radiationj
+from check_func_update import update_text
+from check_calc_veg import calc_vegetation_period
+import tempfile
 
 # Читаем данные бонитета один раз при загрузке модуля
 bonitet_data = []
@@ -28,6 +34,30 @@ except FileNotFoundError:
     print("Error: soil_bonitet.csv not found.")
 except Exception as e:
     print(f"Error reading soil_bonitet.csv: {e}")
+
+# Читаем коэффициенты декад
+decades_coef = pd.read_csv('coef_decades.csv')
+
+def find_bonitet_by_soil_type(soil_type_name, bonitet_data):
+    best_match = None
+    best_score = -1
+    for row in bonitet_data:
+        if row.get('soil_type') and row['soil_type'].strip().lower() == soil_type_name.strip().lower():
+            return row.get('bonitet')
+    for row in bonitet_data:
+        if row.get('soil_type'):
+            current_score = 0
+            soil_words = soil_type_name.strip().lower().split()
+            bonitet_words = row['soil_type'].strip().lower().split()
+            for word in soil_words:
+                if word in bonitet_words:
+                    current_score += 1
+
+            if current_score > best_score:
+                best_score = current_score
+                best_match = row.get('bonitet')
+
+    return best_match if best_score > 0 else None
 
 def get_weather_data(lat, lon):
     url = f"https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&hourly=temperature_2m,precipitation,wind_speed_10m&forecast_days=1"
@@ -130,231 +160,171 @@ def show_yield_page(field_id: int):
     variety_options = ['Аннушка', 'Гордея', 'Луч', 'Золотая']
     sort_state = {'value': field.group or variety_options[0]}
 
-    # Declare variable for the field info table
-    field_info_table = None
+    # Инициализация переменных для ввода
+    bonitet_input = ui.input(label='Бонитет', value=str(field.custom_bonitet or '')).classes('w-full')
+    slope_input = ui.input(label='Уклон (%)', value='0').classes('w-full')
+    exposition_select = ui.select(
+        label='Экспозиция',
+        options=['S', 'N', 'WE'],
+        value='S'
+    ).classes('w-full')
+    year_type_select = ui.select(
+        label='Тип года',
+        options=['normal', 'dry', 'wet'],
+        value='normal'
+    ).classes('w-full')
 
     def on_soil_change(e):
-        soil_type_state['value'] = e.value
-        # Находим бонитет для нового типа почвы из soil_bonitet.csv с учетом схожести
-        new_bonitet = find_bonitet_by_soil_type(e.value, bonitet_data)
-
-        # Обновляем значение в поле ввода бонитета
-        bonitet_input.value = new_bonitet
-
-        # Форматируем новое значение бонитета для отображения
-        new_bonitet_display = new_bonitet if new_bonitet is not None else 'N/A'
-
-        # Обновляем значение бонитета в table_data и обновляем таблицу
-        # Находим строку с типом почвы и обновляем ее значение
-        if field_info_table and field_info_table.rows:
-            for row in field_info_table.rows:
-                if isinstance(row, dict) and 'Параметр' in row:
-                    if row['Параметр'] == 'Тип почвы / Бонитет':
-                        row['Значение'] = f"{soil_type_state['value']} / {new_bonitet_display}"
+        try:
+            soil_type_state['value'] = e.value
+            new_bonitet = find_bonitet_by_soil_type(e.value, bonitet_data)
+            bonitet_input.value = str(new_bonitet) if new_bonitet is not None else ''
+            
+            if field_info_table and field_info_table.rows:
+                for row in field_info_table.rows:
+                    if isinstance(row, dict) and row.get('Параметр') == 'Тип почвы / Бонитет':
+                        row['Значение'] = f"{soil_type_state['value']} / {new_bonitet or 'N/A'}"
                         break
-        # Обновляем отображение таблицы
-        if field_info_table:
-            field_info_table.update()
+                field_info_table.update()
+        except Exception as e:
+            ui.notify(f'Ошибка при обновлении типа почвы: {str(e)}', color='negative')
 
     def on_sort_change(e):
-        sort_state['value'] = e.value
+        try:
+            sort_state['value'] = e.value
+        except Exception as e:
+            ui.notify(f'Ошибка при выборе сорта: {str(e)}', color='negative')
 
     area_ha = poly.area * 111 * 111 if poly else 0
 
-    temp, prec, wind = get_weather_data(sum(p[0] for p in coords_latlng) / len(coords_latlng), sum(p[1] for p in coords_latlng) / len(coords_latlng)) # Fetch once
+    try:
+        temp, prec, wind = get_weather_data(
+            sum(p[0] for p in coords_latlng) / len(coords_latlng),
+            sum(p[1] for p in coords_latlng) / len(coords_latlng)
+        )
+    except Exception as e:
+        ui.notify(f'Ошибка при получении погодных данных: {str(e)}', color='warning')
+        temp, prec, wind = None, None, None
 
     with ui.row().classes('w-full'):
         with ui.column().classes('w-2/3'):
-            m = ui.leaflet(center=[sum(p[0] for p in coords_latlng) / len(coords_latlng), sum(p[1] for p in coords_latlng) / len(coords_latlng)], zoom=13).classes('h-96 w-full')
+            m = ui.leaflet(
+                center=[sum(p[0] for p in coords_latlng) / len(coords_latlng),
+                       sum(p[1] for p in coords_latlng) / len(coords_latlng)],
+                zoom=13
+            ).classes('h-96 w-full')
+            
             if coords_latlng:
                 m.generic_layer(name='polygon', args=[coords_latlng, {'color': 'red', 'weight': 2}])
-            soil_geojson_layer = {'layer': None}
-            soil_geojson_state = {'visible': False}
-            def fetch_and_show_soil_geojson(bounds):
-                min_lat = bounds['_southWest']['lat']
-                min_lng = bounds['_southWest']['lng']
-                max_lat = bounds['_northEast']['lat']
-                max_lng = bounds['_northEast']['lng']
-                url = f'http://localhost:8080/api/soil_geojson?min_lat={min_lat}&min_lng={min_lng}&max_lat={max_lat}&max_lng={max_lng}'
-                import requests
-                try:
-                    geojson = requests.get(url).json()
-                    if soil_geojson_layer['layer']:
-                        m.remove_layer(soil_geojson_layer['layer'])
-                    soil_geojson_layer['layer'] = m.geo_json(geojson)
-                except Exception as ex:
-                    ui.notify(f'Ошибка загрузки geojson: {ex}', color='warning')
-            def toggle_soil_geojson():
-                if not soil_geojson_state['visible']:
-                    soil_geojson_state['visible'] = True
-                else:
-                    soil_geojson_state['visible'] = False
-                    if soil_geojson_layer['layer']:
-                        m.remove_layer(soil_geojson_layer['layer'])
-                        soil_geojson_layer['layer'] = None
-            ui.button('Показать карту почв (GeoJSON)', on_click=toggle_soil_geojson).classes('mt-2')
-            def on_move_end(e):
-                if soil_geojson_state['visible']:
-                    fetch_and_show_soil_geojson(e.args['bounds'])
-            m.on('moveend', on_move_end)
-        with ui.column().classes('w-1/3'):
-            with ui.card():
-                ui.label('Информация о поле').classes('text-h6')
-                initial_bonitet_value = None
-                initial_bonitet_source = 'CSV'
-
-                def find_bonitet_by_soil_type(soil_type_name, bonitet_data):
-                    best_match = None
-                    best_score = -1
-                    for row in bonitet_data:
-                         if row.get('soil_type') and row['soil_type'].strip().lower() == soil_type_name.strip().lower():
-                              return row.get('bonitet')
-                    for row in bonitet_data:
-                         if row.get('soil_type'):
-                              current_score = 0
-                              soil_words = soil_type_name.strip().lower().split()
-                              bonitet_words = row['soil_type'].strip().lower().split()
-                              for word in soil_words:
-                                   if word in bonitet_words:
-                                        current_score += 1
-
-                              if current_score > best_score:
-                                   best_score = current_score
-                                   best_match = row.get('bonitet')
-
-                    return best_match if best_score > 0 else None
-
-                initial_bonitet_value = find_bonitet_by_soil_type(soil_type_state['value'], bonitet_data)
-
-                if field.custom_bonitet is not None:
-                     initial_bonitet_value = field.custom_bonitet
-                     initial_bonitet_source = 'Custom'
-
-                initial_bonitet_display = initial_bonitet_value if initial_bonitet_value is not None else 'N/A'
-
-                table_data = [
-                    {'Параметр': 'Название поля', 'Значение': field.name},
-                    {'Параметр': 'Площадь (га)', 'Значение': f'{area_ha:.2f}'},
-                    {"Параметр": "Тип почвы / Бонитет", "Значение": f"{soil_type_state['value']} / {initial_bonitet_display}"},
+            
+            # Добавляем информацию о сортах
+            with ui.card().classes('w-full mt-4'):
+                ui.label('Информация о сортах').classes('text-h6')
+                
+                # Определяем колонки для таблицы сортов
+                variety_columns = [
+                    {'name': 'sort', 'label': 'Сорт', 'field': 'Сорт', 'align': 'left'},
+                    {'name': 'characteristics', 'label': 'Характеристики', 'field': 'Характеристики', 'align': 'left'},
                 ]
-                field_info_table = ui.table(columns=[{'name': 'Параметр', 'label': 'Параметр', 'field': 'Параметр'}, {'name': 'Значение', 'label': 'Значение', 'field': 'Значение'}], rows=table_data).classes('mb-4').props('pagination=5')
 
-                bonitet_input = ui.input(label='Редактировать бонитет', value=initial_bonitet_value).props('type=number').classes('q-mb-md')
+                # Определяем данные для таблицы сортов
+                variety_data = [
+                    {'Сорт': 'Аннушка', 'Характеристики': 'Среднеспелый, устойчивый к засухе'},
+                    {'Сорт': 'Гордея', 'Характеристики': 'Раннеспелый, высокоурожайный'},
+                    {'Сорт': 'Луч', 'Характеристики': 'Среднеспелый, устойчивый к болезням'},
+                    {'Сорт': 'Золотая', 'Характеристики': 'Позднеспелый, высококачественное зерно'}
+                ]
 
-                ui.select(all_soil_types, value=soil_type_state['value'], label='Тип почвы', on_change=on_soil_change).classes('q-mb-md')
+                # Создаем таблицу, передавая колонки и данные строк
+                variety_info = ui.table(
+                    columns=variety_columns,
+                    rows=variety_data,
+                    row_key='Сорт' # Уникальный ключ строки
+                ).classes('w-full')
 
-                def save_changes():
-                    session = Session()
-                    f = session.query(Field).filter(Field.id == field_id).first()
-                    if f:
-                        f.soil_type = soil_type_state['value']
-                        f.last_updated = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                        try:
-                            bonitet_value_to_save = float(bonitet_input.value)
-                            f.custom_bonitet = bonitet_value_to_save
-                        except (ValueError, TypeError):
-                             f.custom_bonitet = None
-                             ui.notify('Некорректное значение бонитета. Сохранено как пустое.', color='warning')
+            # Добавляем выбор сорта
+            with ui.card().classes('w-full mt-4'):
+                ui.label('Выбор сорта').classes('text-h6')
+                variety_select = ui.select(
+                    label='Выберите сорт',
+                    options=variety_options,
+                    value=sort_state['value']
+                ).classes('w-full')
+                variety_select.on('update', on_sort_change)
 
-                        session.commit()
-                        ui.notify('Данные сохранены', color='positive')
-                    session.close()
-                ui.button('Сохранить', on_click=save_changes).props('color=primary').classes('mt-2')
+            # Добавляем информацию о поле
+            with ui.card().classes('w-full mt-4'):
+                ui.label('Информация о поле').classes('text-h6')
 
-                # --- Секция информации о сортах ---
-                variety_details = {
-                    'Аннушка': {
-                        'Разработчик': 'ФГБНУ НИИСХ Юго-Востока',
-                        'Масса 1000 семян': '41.30 - 47.00',
-                        'Потенциальная урожайность': '3.00',
-                        'Содержание белка,%': '15.60',
-                        'Влажность зерна,%': '9.46',
-                        'Масса литра зерна,г': '816.00',
-                        'Содержание глютена,%': '30.80',
-                        'Индекс глютена': '2.30',
-                        'Зольность,%': '67.00',
-                        'Стекловидность,%': '1.13',
-                        'Черный зародыш,%': '2.32',
-                        'Повреждения насекомыми,%': '',
-                        'Описание урожая': 'в засушливые годы-1,35 т / га (в среднем по 2007, 2009, 2010, 2012, 2013) в благоприятных - 2,97 т / га (в среднем по 2000, 2003, 2008, 2014, 2015).',
-                        'Устойчивость к болезням': 'Сорт Аннушка" практически устойчив к рыхлой головне (Ustilago tritici) и корневым гнилям (Drechslera sorokiniana) вирусным заболеваниям."',
-                        'Период вегетации': 'от 98 до 103 дней (полное созревание в первой декаде августа)', # <<< Добавьте эту строку
-                    },
-                    'Гордея': {
-                        'Разработчик': 'ФНЦ БСТ РАН',
-                        'Масса 1000 семян': '36.10 - 38.00',
-                        'Потенциальная урожайность': '3.20 - 4.00',
-                        'Содержание белка,%': '14.90',
-                        'Влажность зерна,%': '10.00',
-                        'Масса литра зерна,г': '846.00',
-                        'Содержание глютена,%': '26.80',
-                        'Индекс глютена': '1.66',
-                        'Зольность,%': '100.00',
-                        'Стекловидность,%': '0.27',
-                        'Черный зародыш,%': '0.26',
-                        'Повреждения насекомыми,%': '0.15',
-                        'Описание урожая': '',
-                        'Устойчивость к болезням': 'Сорт Гордея" устойчив к засухе, полеганию и прорастанию на корню. В условиях степной зоны Оренбургской области "Гордея" устойчива к мучнистой росе (Erysiphe graminis), бурой ржавчине (Puccinia triticina) и стеблевой ржавчине (Puccinia graminis f. sp. tritici Erikss). Слабо подверженана пыльной головне (Ustilago tritici)."',
-                        'Период вегетации': 'от 252 до 260 дней', # <<< Добавьте эту строку
-                    },
-                    'Золотая': {
-                        'Разработчик': 'Самарский НИИСХ им. Н. М. Тулайкова',
-                        'Масса 1000 семян': '41.30',
-                        'Потенциальная урожайность': '6.67',
-                        'Содержание белка,%': '15.70',
-                        'Влажность зерна,%': '10.30',
-                        'Масса литра зерна,г': '814.00',
-                        'Содержание глютена,%': '26.70',
-                        'Индекс глютена': '88.10',
-                        'Зольность,%': '2.02',
-                        'Стекловидность,%': '100.00',
-                        'Черный зародыш,%': '0.50',
-                        'Повреждения насекомыми,%': '4.05',
-                        'Описание урожая': '1,85 т / га (в среднем по стационарному сортоиспытанию в 2012-2016 гг.)',
-                        'Устойчивость к болезням': '"Сорт "Золотая" обладает устойчивостью к мучнистой росе (Erysiphe graminis), темно-бурой пятнистости пшеницы (Drechslera sorokiniana), бурой ржавчине (Puccinia triticina) и стеблевой ржавчине (Puccinia graminis f. sp. secalis Erikss)."',
-                        'Период вегетации': 'от 280 до 320 дней', # <<< Добавьте эту строку
-                    },
-                    'Луч': { # Изменил \"Луч 25\" на \"Луч\" чтобы соответствовать variety_options
-                        'Разработчик': 'ФГБНУ НИИСХ Юго-Востока',
-                        'Масса 1000 семян': '44.20 - 47.00',
-                        'Потенциальная урожайность': '4.26',
-                        'Содержание белка,%': '15.90',
-                        'Влажность зерна,%': '9.91',
-                        'Масса литра зерна,г': '832.00',
-                        'Содержание глютена,%': '31.80',
-                        'Индекс глютена': '77.80',
-                        'Зольность,%': '2.30',
-                        'Стекловидность,%': '67.00',
-                        'Черный зародыш,%': '1.13',
-                        'Повреждения насекомыми,%': '2.32',
-                        'Описание урожая': 'в засушливые годы-1,30 т / га (в среднем по 2007, 2009, 2010, 2012, 2013), в благоприятных - 2,97 т / га (в среднем по 2000, 200, 2008, 2014, 2015). В конкурсном испытании института за 2012-2015 годы средняя урожайность составила 2,41 т / га',
-                        'Устойчивость к болезням': 'Сорт луч 25 практически устойчив к корневой гнили(Drechslera sorokiniana), слабо поражается вирусными инфекциями, мучнистой росой (Erysiphe graminis), рыхлой головней (Ustilago tritici), практически устойчив к «черному зародышу» зерна.',
-                        'Период вегетации': 'Период вегетации пшеницы сорта "Луч" варьируется в зависимости от условий выращивания и региона, но, в среднем, составляет от 90 до 120 дней.'
-                    }
-                }
+                # Определяем колонки для таблицы информации о поле
+                field_info_columns = [
+                    {'name': 'parameter', 'label': 'Параметр', 'field': 'Параметр', 'align': 'left'},
+                    {'name': 'value', 'label': 'Значение', 'field': 'Значение', 'align': 'left'},
+                ]
 
-                with ui.tabs().classes('w-full mt-4') as tabs:
-                    variety_tabs = [ui.tab(variety_name) for variety_name in variety_details.keys()]
+                # Определяем данные для таблицы информации о поле
+                field_info_data = [
+                    {'Параметр': 'Площадь', 'Значение': f'{area_ha:.2f} га'},
+                    {'Параметр': 'Тип почвы / Бонитет', 'Значение': f"{soil_type_state['value']} / {find_bonitet_by_soil_type(soil_type_state['value'], bonitet_data) or 'N/A'}"},
+                    {'Параметр': 'Текущая температура', 'Значение': f'{temp:.1f}°C' if temp else 'N/A'},
+                    {'Параметр': 'Осадки', 'Значение': f'{prec:.1f} мм' if prec else 'N/A'},
+                    {'Параметр': 'Скорость ветра', 'Значение': f'{wind:.1f} м/с' if wind else 'N/A'}
+                ]
 
-                initial_tab_value = field.group if field.group in variety_details.keys() else list(variety_details.keys())[0]
+                # Создаем таблицу информации о поле
+                field_info_table = ui.table(
+                    columns=field_info_columns,
+                    rows=field_info_data,
+                    row_key='Параметр' # Уникальный ключ строки
+                ).classes('w-full')
 
-                with ui.tab_panels(tabs, value=initial_tab_value).classes('w-full'):
-                    for variety_name, details in variety_details.items():
-                        with ui.tab_panel(variety_name):
-                            ui.label(f'Информация о сорте: {variety_name}').classes('text-h6')
-                            details_table_data = []
-                            for param, value in details.items():
-                                details_table_data.append({'Параметр': param, 'Значение': value})
-                            ui.table(
-                                columns=[
-                                    {'name': 'Параметр', 'label': 'Параметр', 'field': 'Параметр', 'align': 'left'},
-                                    {'name': 'Значение', 'label': 'Значение', 'field': 'Значение', 'align': 'left'},
-                                ],
-                                rows=details_table_data,
-                                row_key='Параметр'
-                            ).props('dense flat bordered pagination=5')
+        with ui.column().classes('w-1/3'):
+            # Добавляем параметры расчета
+            with ui.card().classes('w-full'):
+                ui.label('Параметры расчета').classes('text-h6')
+                ui.select(
+                    label='Тип почвы',
+                    options=all_soil_types,
+                    value=soil_type_state['value'],
+                    on_change=lambda e: on_soil_change(e, bonitet_input, field_info_table, soil_type_state)
+                ).classes('w-full')
+                bonitet_input.classes('w-full')
+                slope_input.classes('w-full')
+                exposition_select.classes('w-full')
+                year_type_select.classes('w-full')
+
+            # Добавляем кнопку расчета урожайности
+            with ui.card().classes('w-full mt-4'):
+                ui.button(
+                    'Рассчитать урожайность',
+                    on_click=lambda: calculate_yield_results(
+                        field.id, soil_type_state, sort_state, bonitet_input, slope_input, 
+                        exposition_select, year_type_select, coords_latlng, results_table,
+                        variety_options, decades_coef, VarConst
+                    )
+                ).classes('w-full')
+
+            # Добавляем результаты расчета
+            with ui.card().classes('w-full mt-4'):
+                ui.label('Результаты расчета').classes('text-h6')
+
+                # Определяем колонки для таблицы результатов расчета
+                results_columns = [
+                    {'name': 'parameter', 'label': 'Параметр', 'field': 'Параметр', 'align': 'left'},
+                    {'name': 'value', 'label': 'Значение', 'field': 'Значение', 'align': 'left'},
+                ]
+
+                # Создаем таблицу результатов расчета
+                results_table = ui.table(
+                    columns=results_columns,
+                    rows=[] # Инициализируем с пустыми строками
+                ).classes('w-full')
 
     ui.button('Назад', on_click=lambda: ui.navigate.to('/fields')).classes('mt-4')
+
+    # Добавляем кнопку сохранения изменений
+    with ui.row().classes('w-full justify-end'):
+         ui.button('Сохранить изменения', on_click=lambda: save_changes(field.id, soil_type_state, sort_state, bonitet_input, Session, Field, ui)).classes('mt-4')
 
 def field_climate_page(field_id: int):
     session = Session()
@@ -429,3 +399,74 @@ def field_climate_page(field_id: int):
                 print("--- End Debugging ---")
 
     ui.button('Назад', on_click=lambda: ui.navigate.to('/fields')).classes('mt-4')
+
+def calculate_yield_results(field_id, soil_type_state, sort_state, bonitet_input, slope_input, exposition_select, year_type_select, coords_latlng, results_table, variety_options, decades_coef, VarConst):
+    try:
+        # Get input values
+        soilbon = float(bonitet_input.value) if bonitet_input.value else 0
+        variety_type = variety_options.index(sort_state['value']) + 1
+        slope = float(slope_input.value) if slope_input.value else 0
+        exposition = exposition_select.value
+        year_type = year_type_select.value
+
+        # Get weather data for the field
+        lat = sum(p[0] for p in coords_latlng) / len(coords_latlng)
+        lon = sum(p[1] for p in coords_latlng) / len(coords_latlng)
+        
+        # Get decades weather data
+        decades_weather = update_text({'points': [{'customdata': field_id}]}, year_type)
+        
+        # Calculate vegetation period
+        pheno_file = calc_vegetation_period(variety_type, pd.Series([1,32,60,91,121,152,182,213,244,274,305,335]), 
+                                          pd.Series([31,59,90,120,151,181,212,243,273,304,334,365]), 
+                                          pd.read_csv('Phenophases.csv'))
+        
+        # Обновляем PARj и Radiationj с учетом коэффициентов из coef_decades.csv
+        PARj_updated = pd.DataFrame({
+            'id': decades_coef['id'],
+            'afi': decades_coef['afi'],
+            'bfi': decades_coef['bfi']
+        })
+        
+        Radiationj_updated = pd.DataFrame({
+            'id': decades_coef['id'],
+            'afi': decades_coef['Rafi'],  # Используем колонку Rafi для радиации
+            'bfi': decades_coef['Rbfi']   # Используем колонку Rbfi для радиации
+        })
+        
+        # Calculate yield with updated coefficients
+        result = calculate_yield(decades_weather, soilbon, variety_type, slope, exposition, 
+                              PARj_updated.to_json(orient='split'), 
+                              Radiationj_updated.to_json(orient='split'),
+                              pheno_file, VarConst.to_json(orient='split'), 'ru')
+        
+        # Parse results
+        print(f"Result from calculate_yield: {result}") # Отладочный вывод
+        results = json.loads(result)
+        
+        # Update results table
+        results_table.rows = [
+            {'Параметр': 'Урожай по PAR', 'Значение': f"{results['PAR']:.2f} т/га"},
+            {'Параметр': 'Урожай по осадкам', 'Значение': f"{results['PRC']:.2f} т/га"},
+            {'Параметр': 'Итоговый урожай', 'Значение': f"{results['FIN']:.2f} т/га"},
+            {'Параметр': 'Стебли', 'Значение': f"{results['PAR_S']:.2f} т/га"},
+            {'Параметр': 'Листья', 'Значение': f"{results['PAR_L']:.2f} т/га"}
+        ]
+        results_table.update()
+        
+    except Exception as e:
+        ui.notify(f'Ошибка при расчете: {str(e)}', color='negative')
+
+def save_changes(field_id, soil_type_state, sort_state, bonitet_input, Session, Field, ui):
+    try:
+        session = Session()
+        f = session.query(Field).filter(Field.id == field_id).first()
+        if f:
+            f.soil_type = soil_type_state['value']
+            f.custom_bonitet = float(bonitet_input.value) if bonitet_input.value else None
+            f.group = sort_state['value']
+            session.commit()
+            ui.notify('Изменения сохранены', color='positive')
+        session.close()
+    except Exception as e:
+        ui.notify(f'Ошибка при сохранении изменений: {str(e)}', color='negative')

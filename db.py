@@ -5,7 +5,7 @@ import os
 import uuid
 
 Base = declarative_base()
-DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql+psycopg2://agro:agro_pass@db:5432/agrofields')
+DATABASE_URL = os.getenv('DATABASE_URL', 'postgresql+psycopg2://postgres:postgres@localhost:5432/agrofields')
 engine = create_engine(DATABASE_URL)
 Session = sessionmaker(bind=engine)
 
@@ -65,7 +65,7 @@ class Field(Base):
     last_updated = Column(String)
     group = Column(String)
     notes = Column(Text)
-    custom_bonitet = Column(Float)
+    custom_bonitet = Column(Float) # <--- Вот эта колонка определена в коде
     user = relationship("User", back_populates="fields")
     soil_analyses = relationship("SoilAnalysis", back_populates="field")
     climate_data = relationship("ClimateData", back_populates="field")
